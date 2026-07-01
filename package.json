@@ -102,6 +102,8 @@
     "wait-on": "^7.0.1"
   },
   "scripts": {
+    "premium:apply": "git apply patches/premium-unlock.patch",
+    "premium:revert": "git checkout -- src/store/actions/manager.tsx src/utils/request/user.ts",
     "analyze": "source-map-explorer 'build/static/js/*.js'",
     "start": "react-scripts start",
     "build": "react-scripts build",

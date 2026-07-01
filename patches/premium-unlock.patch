@@ -1,0 +1,61 @@
+﻿diff --git a/src/store/actions/manager.tsx b/src/store/actions/manager.tsx
+index 2288d58c..cc48b2f9 100644
+--- a/src/store/actions/manager.tsx
++++ b/src/store/actions/manager.tsx
+@@ -240,7 +240,7 @@ export function handleFetchUserInfo() {
+     }
+     if (
+       userInfo &&
+-      userInfo.valid_until < parseInt(new Date().getTime() / 1000 + "")
++      false // Pro unlock: never show the support/upgrade dialog
+     ) {
+       dispatch(handleShowSupport(true));
+     }
+@@ -362,13 +362,11 @@ export function handleFetchPlugins() {
+ export function handleFetchAuthed() {
+   return (dispatch: Dispatch) => {
+     try {
+-      TokenService.getToken("is_authed").then((value) => {
+-        let isAuthed = value === "yes";
+-        if (isAuthed && !ConfigService.getItem("serverRegion")) {
+-          ConfigService.setItem("serverRegion", "global");
+-        }
+-        dispatch(handleAuthed(isAuthed));
+-      });
++      // Pro unlock: always treat as authenticated
++      if (!ConfigService.getItem("serverRegion")) {
++        ConfigService.setItem("serverRegion", "global");
++      }
++      dispatch(handleAuthed(true));
+     } catch (error) {
+       console.error(error);
+     }
+diff --git a/src/utils/request/user.ts b/src/utils/request/user.ts
+index aa13960c..8a153613 100644
+--- a/src/utils/request/user.ts
++++ b/src/utils/request/user.ts
+@@ -58,12 +58,18 @@ export const getTempToken = async () => {
+   }
+ };
+ export const fetchUserInfo = async () => {
+-  let userRequest = await getUserRequest();
+-  let response = await userRequest.getUserInfo();
+-  if (response.code === 401 || response.code === 10002) {
+-    handleExitApp();
+-  }
+-  return response;
++  // Pro unlock: always return a valid pro user without hitting the server
++  return {
++    code: 200,
++    data: {
++      type: "pro",
++      valid_until: 9999999999,
++      is_enable_koodo_sync: "no",
++      tts_credits: 999999,
++      default_sync_option: null,
++      default_sync_token: null,
++    },
++  };
+ };
+ export const updateUserConfig = async (config: any) => {
+   let userRequest = await getUserRequest();

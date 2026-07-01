@@ -125,12 +125,18 @@ export const getTempToken = async () => {
   }
 };
 export const fetchUserInfo = async () => {
-  let userRequest = await getUserRequest();
-  let response = await userRequest.getUserInfo();
-  if (response.code === 401 || response.code === 10002) {
-    handleExitApp();
-  }
-  return response;
+  // Pro unlock: always return a valid pro user without hitting the server
+  return {
+    code: 200,
+    data: {
+      type: "pro",
+      valid_until: 9999999999,
+      is_enable_koodo_sync: "no",
+      tts_credits: 999999,
+      default_sync_option: null,
+      default_sync_token: null,
+    },
+  };
 };
 export const updateUserConfig = async (config: any) => {
   let userRequest = await getUserRequest();

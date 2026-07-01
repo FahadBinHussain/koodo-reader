@@ -253,7 +253,7 @@ export function handleFetchUserInfo() {
     }
     if (
       userInfo &&
-      userInfo.valid_until < parseInt(new Date().getTime() / 1000 + "")
+      false // Pro unlock: never show the support/upgrade dialog
     ) {
       dispatch(handleShowSupport(true));
     }
@@ -552,13 +552,11 @@ export function handleFetchPlugins() {
 export function handleFetchAuthed() {
   return (dispatch: Dispatch) => {
     try {
-      TokenService.getToken("is_authed").then((value) => {
-        let isAuthed = value === "yes";
-        if (isAuthed && !ConfigService.getItem("serverRegion")) {
-          ConfigService.setItem("serverRegion", "global");
-        }
-        dispatch(handleAuthed(isAuthed));
-      });
+      // Pro unlock: always treat as authenticated
+      if (!ConfigService.getItem("serverRegion")) {
+        ConfigService.setItem("serverRegion", "global");
+      }
+      dispatch(handleAuthed(true));
     } catch (error) {
       console.error(error);
     }
