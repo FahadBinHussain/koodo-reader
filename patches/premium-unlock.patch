@@ -1,3 +1,27 @@
+diff --git a/src/containers/viewer/component.tsx b/src/containers/viewer/component.tsx
+index 1ecf70e7..06b94fad 100644
+--- a/src/containers/viewer/component.tsx
++++ b/src/containers/viewer/component.tsx
+@@ -258,8 +258,9 @@ class Viewer extends React.Component<ViewerProps, ViewerState> {
+           pdfCrop = { top, bottom, left, right };
+         }
+       }
++      const desc = this.props.currentBook.description || "";
+       const ocrLangKey =
+-        this.props.currentBook.description.indexOf("scanned") > -1
++        desc.indexOf("scanned") > -1
+           ? "scannedOcrLang"
+           : "textOcrLang";
+       let rendition = BookHelper.getRendition(
+@@ -326,7 +327,7 @@ class Viewer extends React.Component<ViewerProps, ViewerState> {
+           titleSizeValue:
+             ConfigService.getReaderConfig("titleSizeValue") || "1.2",
+           isScannedPDF:
+-            this.props.currentBook.description.indexOf("scanned") > -1
++            desc.indexOf("scanned") > -1
+               ? "yes"
+               : "no",
+           brushColor:
 diff --git a/src/store/actions/manager.tsx b/src/store/actions/manager.tsx
 index f0529ea2..d525a8c9 100644
 --- a/src/store/actions/manager.tsx
@@ -31,10 +55,21 @@ index f0529ea2..d525a8c9 100644
        console.error(error);
      }
 diff --git a/src/utils/common.ts b/src/utils/common.ts
-index 874214ec..02bf296f 100644
+index 874214ec..9fb0103e 100644
 --- a/src/utils/common.ts
 +++ b/src/utils/common.ts
-@@ -1044,6 +1044,14 @@ export const testConnection = async (driveName: string, driveConfig: any) => {
+@@ -734,7 +734,9 @@ export const preCacheAllBooks = async (bookList: Book[]) => {
+         isMobile: "no",
+         password: getPdfPassword(selectedBook),
+         isScannedPDF:
+-          selectedBook.description.indexOf("scanned") > -1 ? "yes" : "no",
++          (selectedBook.description || "").indexOf("scanned") > -1
++            ? "yes"
++            : "no",
+         isKeepPDFBackground: "no",
+       },
+       Kookit
+@@ -1044,6 +1046,14 @@ export const testConnection = async (driveName: string, driveConfig: any) => {
  
      return result;
    } else {
@@ -49,6 +84,34 @@ index 874214ec..02bf296f 100644
      let syncUtil = new SyncUtil(driveName, driveConfig);
      // 上传到云端
      let result = await syncUtil.uploadFile(
+@@ -1935,13 +1945,14 @@ export const TEXT_COLORS = [
+   "#2C2C2C",
+ ];
+ export const getDefaultOcrEngine = (currentBook: any) => {
++  const description = currentBook?.description || "";
+   const engine = ConfigService.getReaderConfig(
+-    currentBook.description.indexOf("scanned") > -1
++    description.indexOf("scanned") > -1
+       ? "scannedOcrEngine"
+       : "textOcrEngine"
+   );
+   if (engine) return engine;
+-  if (currentBook.description.indexOf("scanned") > -1) {
++  if (description.indexOf("scanned") > -1) {
+     return "paddle";
+   } else {
+     return "system-ocr";
+@@ -1978,8 +1989,9 @@ export const getOcrLangList = (engine: string) => {
+   return list;
+ };
+ export const getDefaultOcrLang = (engine: string, currentBook: any) => {
++  const description = currentBook?.description || "";
+   const lang = ConfigService.getReaderConfig(
+-    currentBook.description.indexOf("scanned") > -1
++    description.indexOf("scanned") > -1
+       ? "scannedOcrLang"
+       : "textOcrLang"
+   );
 diff --git a/src/utils/file/bookUtil.ts b/src/utils/file/bookUtil.ts
 index cadacb4a..0d27536c 100644
 --- a/src/utils/file/bookUtil.ts

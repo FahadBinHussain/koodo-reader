@@ -15,16 +15,17 @@ fork of `koodo-reader/koodo-reader`. upstream = official repo, origin = `FahadBi
   - `prebuild` AND `build` both run `node patches/apply-patch.js` so Vercel deploys the patched code automatically
 - `.gitattributes` — `*.patch text eol=lf` (CRITICAL: a CRLF patch file breaks `git apply` on Windows; PowerShell `>` / `Set-Content` writes CRLF. write patch files via `git show <rev>:patches/premium-unlock.patch` piped through python, or normalize with `.Replace("\`r\`n","\`n")`)
 
-### what the premium patch does (5 files)
+### what the premium patch does (7 files)
 
 | file | change |
 |------|--------|
 | `src/store/actions/manager.tsx` | `handleFetchUserInfo`: suppress support/upgrade dialog; `handleFetchAuthed`: always authed=true (Pro) |
 | `src/utils/request/user.ts` | `fetchUserInfo`: keep REAL server call but force `data.type="pro"` + `valid_until=9999999999`. do NOT fully mock it (breaking real auth breaks decrypt) |
 | `src/utils/request/thirdparty.ts` | `encryptToken`: try/catch around `thirdpartyRequest.encryptToken` (bundled lib THROWS TypeError on `null.data` — must catch); on 400/500 fall back to storing the raw JSON token in local storage and return 200. `decryptToken`: return raw JSON tokens directly if they lack the `#` server marker |
-| `src/utils/common.ts` | `testConnection`: for MEGA in browser, skip the real upload test and return true (megajs Blob upload fails on browser CORS/WebSocket quirks) |
+| `src/utils/common.ts` | `testConnection`: for MEGA in browser, skip the real upload test and return true (megajs Blob upload fails on browser CORS/WebSocket quirks). also NULL-safe `getDefaultOcrEngine`/`getDefaultOcrLang`/`preCacheAllBooks isScannedPDF` — `description` can be null for manually-inserted MEGA books |
 | `src/utils/file/configUtil.ts` | `getSyncData`/`updateSyncData`: fall back to local storage (`koodo_sync_data_<type>`) instead of erroring when Koodo's server rejects (no real auth) |
 | `src/utils/file/bookUtil.ts` | `redirectBook`: drop the `(await TokenService.getToken("is_authed")) === "yes"` gate added by a later upstream commit — MEGA is credential-bound (no OAuth), so this gate made EVERY cloud download fail with "Book not exists". now just checks `isBookExistInCloud(book.key)` |
+| `src/containers/viewer/component.tsx` | `handleRenderBook`: NULL-safe `description` before `.indexOf("scanned")` (2 sites) — a NULL description throws TypeError inside the render promise → whole book renders BLANK |
 
 ### IMPORTANT behavioral gotchas (learned the hard way)
 
