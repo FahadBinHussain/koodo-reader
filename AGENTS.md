@@ -15,7 +15,7 @@ fork of `koodo-reader/koodo-reader`. upstream = official repo, origin = `FahadBi
   - `prebuild` AND `build` both run `node patches/apply-patch.js` so Vercel deploys the patched code automatically
 - `.gitattributes` — `*.patch text eol=lf` (CRITICAL: a CRLF patch file breaks `git apply` on Windows; PowerShell `>` / `Set-Content` writes CRLF. write patch files via `git show <rev>:patches/premium-unlock.patch` piped through python, or normalize with `.Replace("\`r\`n","\`n")`)
 
-### what the premium patch does (8 files)
+### what the premium patch does (9 files)
 
 | file | change |
 |------|--------|
@@ -27,6 +27,7 @@ fork of `koodo-reader/koodo-reader`. upstream = official repo, origin = `FahadBi
 | `src/utils/file/bookUtil.ts` | `redirectBook`: drop the `(await TokenService.getToken("is_authed")) === "yes"` gate added by a later upstream commit — MEGA is credential-bound (no OAuth), so this gate made EVERY cloud download fail with "Book not exists". now just checks `isBookExistInCloud(book.key)` |
 | `src/containers/viewer/component.tsx` | `handleRenderBook`: NULL-safe `description` before `.indexOf("scanned")` (2 sites) |
 | `src/pages/reader/component.tsx` | `render()`: NULL-safe `description.indexOf("scanned")` — this ONE SITE in the render() method was the actual crash that caused blank pages. React's render() throws on NULL → silently unmounts → blank page. the viewer's handleRenderBook never gets reached. |
+| `src/utils/file/coverUtil.ts` | `isCoverExist`: `book.cover !== ""` returns TRUE for NULL cover (`null !== ""`), so a book with NULL cover renders a broken `<img src={null}>` instead of the format+name EmptyCover fallback. changed the 3 fallback branches to `!!book.cover` |
 
 ### IMPORTANT behavioral gotchas (learned the hard way)
 

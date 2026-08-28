@@ -186,6 +186,29 @@ index efe4e342..ec8452f9 100644
      }
  
      this.syncData = {};
+diff --git a/src/utils/file/coverUtil.ts b/src/utils/file/coverUtil.ts
+index 0c06adeb..efd1ef06 100644
+--- a/src/utils/file/coverUtil.ts
++++ b/src/utils/file/coverUtil.ts
+@@ -117,15 +117,15 @@ class CoverUtil {
+       if (ConfigService.getItem("isUseLocal") === "yes") {
+         let coverList = await this.getLocalCoverList();
+         if (!coverList || coverList.length === 0) {
+-          return book.cover !== "";
++          return !!book.cover;
+         }
+         let cover = coverList.find((item) => item.startsWith(book.key));
+         if (!cover) {
+-          return book.cover !== "";
++          return !!book.cover;
+         }
+         return true;
+       } else {
+-        return book.cover !== "";
++        return !!book.cover;
+       }
+     }
+   }
 diff --git a/src/utils/request/thirdparty.ts b/src/utils/request/thirdparty.ts
 index 0b8518ac..7df8df64 100644
 --- a/src/utils/request/thirdparty.ts
