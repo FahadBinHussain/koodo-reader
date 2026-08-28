@@ -22,6 +22,19 @@ index 1ecf70e7..06b94fad 100644
                ? "yes"
                : "no",
            brushColor:
+diff --git a/src/pages/reader/component.tsx b/src/pages/reader/component.tsx
+index 9c170dc7..e4f10500 100644
+--- a/src/pages/reader/component.tsx
++++ b/src/pages/reader/component.tsx
+@@ -467,7 +467,7 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
+             !ConfigService.getAllListConfig("convertPDFBooks").includes(
+               this.props.currentBook.key
+             ) &&
+-            this.props.currentBook.description.indexOf("scanned") > -1 && (
++            (this.props.currentBook.description || "").indexOf("scanned") > -1 && (
+               <div
+                 className="next-chapter-single-container"
+                 onClick={() => {
 diff --git a/src/store/actions/manager.tsx b/src/store/actions/manager.tsx
 index f0529ea2..d525a8c9 100644
 --- a/src/store/actions/manager.tsx
