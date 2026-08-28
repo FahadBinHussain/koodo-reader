@@ -51,6 +51,18 @@ fork of `koodo-reader/koodo-reader`. upstream = official repo, origin = `FahadBi
 - browser automation of the bind flow: mainframe agent-browser; navigate Settings gear (top bar) → Sync and backup → Add data source → MEGA (Pro) → fill email/password → Bind. `dataSourceList`/`defaultSyncOption` in localStorage confirm the bind.
 - MEGA account helper: `automata\mega.nz\mega-account.ps1` (run/upload, vault-backed, stateless).
 
+## settings & data persistence across deploys
+
+settings live in two places, and deploys never touch either:
+
+1. **app settings** (theme, font, layout, reading prefs, sync config) → browser localStorage, keyed to `https://koodoo.vercel.app`. each deploy replaces static files on Vercel — never touches user's browser. settings survive every deploy as long as the URL stays the same.
+   - ⚠️ each Vercel preview URL gets a random subdomain (e.g. `koodo-reader-abc123.vercel.app`) — different origin, so it looks like a fresh app. always use the stable alias.
+   - localStorage is cleared by: browser "clear site data" action, browser cache wipe, or switching browsers/devices. it does NOT survive those.
+
+2. **library data** (books, reading progress, bookmarks, notes) → MEGA cloud via Koodo Sync at `/Root/KoodoReader/config/books.db` + `sync.json` (and `/Root/KoodoReader/book/<key>.<format>` files). this survives literally everything — deploys, browser switches, fresh computers — because it lives in the MEGA account. on a new browser, just connect MEGA sync and it pulls everything back.
+
+**bottom line:** Vercel = just the app code (replaced each deploy). settings = browser + MEGA (never touched by deploys). the whole reason we set up the MEGA sync path is so user data outlives deploys.
+
 ## deployment
 
 - Vercel project `koodo-reader` on account `koodoshen@outlook.com` (token in Bitwarden `vercel.com - koodoshen`, `vcp_` pattern). production alias = `koodoo.vercel.app` (bare preview URLs show Vercel login page — only the production alias serves publicly).
