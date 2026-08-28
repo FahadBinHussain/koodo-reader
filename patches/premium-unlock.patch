@@ -1,10 +1,41 @@
 diff --git a/src/components/popups/popupTrans/component.tsx b/src/components/popups/popupTrans/component.tsx
-index 0ea159ce..267bb459 100644
+index 0ea159ce..5567e760 100644
 --- a/src/components/popups/popupTrans/component.tsx
 +++ b/src/components/popups/popupTrans/component.tsx
-@@ -233,6 +233,14 @@ class PopupTrans extends React.Component<PopupTransProps, PopupTransState> {
-         }
-       );
+@@ -218,21 +218,32 @@ class PopupTrans extends React.Component<PopupTransProps, PopupTransState> {
+       }
+       this.textAccumulator = "";
+       this.startUpdateInterval();
+-      await getTransStream(
+-        text,
+-        ConfigService.getReaderConfig("transSource") || "Automatic",
+-        ConfigService.getReaderConfig("transTarget") ||
+-          getDefaultTransTarget(plugin.langList),
+-        (result) => {
+-          if (result && result.done) {
+-            return;
+-          }
+-          if (result && result.text) {
+-            this.textAccumulator += result.text;
++      await Promise.race([
++        getTransStream(
++          text,
++          ConfigService.getReaderConfig("transSource") || "Automatic",
++          ConfigService.getReaderConfig("transTarget") ||
++            getDefaultTransTarget(plugin.langList),
++          (result) => {
++            if (result && result.done) {
++              return;
++            }
++            if (result && result.text) {
++              this.textAccumulator += result.text;
++            }
+           }
+-        }
+-      );
++        ),
++        new Promise((resolve) => setTimeout(resolve, 10000)),
++      ]);
        this.stopUpdateInterval();
 +      if (!this.textAccumulator) {
 +        let errMsg =
