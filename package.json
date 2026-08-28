@@ -106,7 +106,7 @@
   },
   "scripts": {
     "premium:apply": "node patches/apply-patch.js",
-    "premium:revert": "git checkout -- src/store/actions/manager.tsx src/utils/common.ts src/utils/file/configUtil.ts src/utils/request/thirdparty.ts src/utils/request/user.ts",
+    "premium:revert": "git checkout -- src/store/actions/manager.tsx src/utils/common.ts src/utils/file/configUtil.ts src/utils/request/thirdparty.ts src/utils/request/user.ts src/utils/file/bookUtil.ts src/containers/viewer/component.tsx src/pages/reader/component.tsx src/utils/file/coverUtil.ts src/components/popups/popupTrans/component.tsx",
     "prebuild": "node patches/apply-patch.js",
     "analyze": "source-map-explorer 'build/static/js/*.js'",
     "start": "react-scripts start",
