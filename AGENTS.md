@@ -11,11 +11,11 @@ fork of `koodo-reader/koodo-reader`. upstream = official repo, origin = `FahadBi
 - `patches/sync-upstream.ps1` — future upstream merge workflow (fetch → reset to upstream → verify patch applies → apply)
 - `package.json` scripts:
   - `premium:apply` → `node patches/apply-patch.js`
-  - `premium:revert` → `git checkout -- src/store/actions/manager.tsx src/utils/common.ts src/utils/file/configUtil.ts src/utils/request/thirdparty.ts src/utils/request/user.ts`
+  - `premium:revert` → `git checkout -- <all 10 patched files>` (manager.tsx, common.ts, configUtil.ts, thirdparty.ts, user.ts, bookUtil.ts, viewer/component.tsx, pages/reader/component.tsx, coverUtil.ts, popupTrans/component.tsx)
   - `prebuild` AND `build` both run `node patches/apply-patch.js` so Vercel deploys the patched code automatically
 - `.gitattributes` — `*.patch text eol=lf` (CRITICAL: a CRLF patch file breaks `git apply` on Windows; PowerShell `>` / `Set-Content` writes CRLF. write patch files via `git show <rev>:patches/premium-unlock.patch` piped through python, or normalize with `.Replace("\`r\`n","\`n")`)
 
-### what the premium patch does (9 files)
+### what the premium patch does (10 files)
 
 | file | change |
 |------|--------|
@@ -28,6 +28,7 @@ fork of `koodo-reader/koodo-reader`. upstream = official repo, origin = `FahadBi
 | `src/containers/viewer/component.tsx` | `handleRenderBook`: NULL-safe `description` before `.indexOf("scanned")` (2 sites) |
 | `src/pages/reader/component.tsx` | `render()`: NULL-safe `description.indexOf("scanned")` — this ONE SITE in the render() method was the actual crash that caused blank pages. React's render() throws on NULL → silently unmounts → blank page. the viewer's handleRenderBook never gets reached. |
 | `src/utils/file/coverUtil.ts` | `isCoverExist`: `book.cover !== ""` returns TRUE for NULL cover (`null !== ""`), so a book with NULL cover renders a broken `<img src={null}>` instead of the format+name EmptyCover fallback. changed the 3 fallback branches to `!!book.cover` |
+| `src/components/popups/popupTrans/component.tsx` | Official AI Translation: after `getTransStream` (Koodo's paid server) finishes, check if any translation text was produced. if not (server rejected due to no real Pro token), show a loud error toast + set the error message in the translated text panel. no silent blank. |
 
 ### IMPORTANT behavioral gotchas (learned the hard way)
 
@@ -40,6 +41,7 @@ fork of `koodo-reader/koodo-reader`. upstream = official repo, origin = `FahadBi
 7. **"Book not exists" on EVERY book click (2026-08-28)** = upstream added an `is_authed` token gate in `redirectBook` (`src/utils/file/bookUtil.ts`). the premium patch only forces Redux auth state (`handleFetchAuthed`), NOT the `is_authed` token, so the gate short-circuits all cloud downloads → "Book not exists" toast. fix: patch drops the `is_authed` check and just tests `isBookExistInCloud`. if this reappears after an upstream merge, verify `bookUtil.ts` is in the patch and the gate is gone.
 8. **blank page + blank gray cover (2026-08-28, same book)** = two NULL fields in books.db. (a) `description` NULL → `pages/reader/component.tsx render()` calls `.indexOf("scanned")` → React render() throws → whole reader page silently unmounts = blank. (b) `cover` NULL → `coverUtil.isCoverExist` does `book.cover !== ""` → `null !== ""` is TRUE → renders `<img src={null}>` = broken gray box, never falls back to the format+name EmptyCover. both fixed in the patch (NULL-safe) AND in the MEGA data (set `description=''`, `cover=''`). **never insert a book with NULL description or cover — use empty strings.**
 9. **web "Restore library" hangs forever** = `restore()` calls `window.electronAPI` (restore.ts:189) which only exists in the desktop app. on web it never resolves → stuck "Restoring..." dialog. it's desktop-only; hard-refresh to clear, and DON'T use Restore on web. on web, fresh library data is pulled by the automatic sync on load (header `handleCloudSync`) — to force it, just reload the page.
+10. **Official AI Translation is blank / never works (2026-08-28)** = it's a server-side paid Koodo feature. `getTransStream` → `ReaderRequest.getTransFetch` → POST `/api/v1/pro/reader/get_llm_trans_stream` with a Bearer token. this fork fakes Pro but has NO real server token, so Koodo's server rejects the request and it returns empty — upstream code just awaited it silently, leaving a blank translation panel. per user's loud-failure rule (global AGENTS.md rule 43), the patch does NOT substitute another engine. instead it checks whether `getTransStream` produced any text; if not, it shows a loud error toast + the error message in the translated panel ("Official AI Translation is a paid Koodo server feature. This fork has no valid server token..."). do not turn this into a fallback to google/libre/etc unless the user explicitly asks.
 
 ## sync / MEGA data layout
 

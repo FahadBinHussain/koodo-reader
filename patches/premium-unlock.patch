@@ -1,3 +1,22 @@
+diff --git a/src/components/popups/popupTrans/component.tsx b/src/components/popups/popupTrans/component.tsx
+index 0ea159ce..267bb459 100644
+--- a/src/components/popups/popupTrans/component.tsx
++++ b/src/components/popups/popupTrans/component.tsx
+@@ -233,6 +233,14 @@ class PopupTrans extends React.Component<PopupTransProps, PopupTransState> {
+         }
+       );
+       this.stopUpdateInterval();
++      if (!this.textAccumulator) {
++        let errMsg =
++          "Official AI Translation is a paid Koodo server feature. This fork has no valid server token, so the request was rejected. No translation was produced.";
++        this.textAccumulator = "";
++        this.setState({ translatedText: errMsg, isFinishOutput: false });
++        toast.error(errMsg);
++        return;
++      }
+       this.textAccumulator = "";
+       this.setState({ isFinishOutput: true });
+     }
 diff --git a/src/containers/viewer/component.tsx b/src/containers/viewer/component.tsx
 index 1ecf70e7..06b94fad 100644
 --- a/src/containers/viewer/component.tsx
