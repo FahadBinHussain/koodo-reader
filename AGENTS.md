@@ -15,7 +15,7 @@ fork of `koodo-reader/koodo-reader`. upstream = official repo, origin = `FahadBi
   - `prebuild` AND `build` both run `node patches/apply-patch.js` so Vercel deploys the patched code automatically
 - `.gitattributes` — `*.patch text eol=lf` (CRITICAL: a CRLF patch file breaks `git apply` on Windows; PowerShell `>` / `Set-Content` writes CRLF. write patch files via `git show <rev>:patches/premium-unlock.patch` piped through python, or normalize with `.Replace("\`r\`n","\`n")`)
 
-### what the premium patch does (7 files)
+### what the premium patch does (8 files)
 
 | file | change |
 |------|--------|
@@ -25,7 +25,8 @@ fork of `koodo-reader/koodo-reader`. upstream = official repo, origin = `FahadBi
 | `src/utils/common.ts` | `testConnection`: for MEGA in browser, skip the real upload test and return true (megajs Blob upload fails on browser CORS/WebSocket quirks). also NULL-safe `getDefaultOcrEngine`/`getDefaultOcrLang`/`preCacheAllBooks isScannedPDF` — `description` can be null for manually-inserted MEGA books |
 | `src/utils/file/configUtil.ts` | `getSyncData`/`updateSyncData`: fall back to local storage (`koodo_sync_data_<type>`) instead of erroring when Koodo's server rejects (no real auth) |
 | `src/utils/file/bookUtil.ts` | `redirectBook`: drop the `(await TokenService.getToken("is_authed")) === "yes"` gate added by a later upstream commit — MEGA is credential-bound (no OAuth), so this gate made EVERY cloud download fail with "Book not exists". now just checks `isBookExistInCloud(book.key)` |
-| `src/containers/viewer/component.tsx` | `handleRenderBook`: NULL-safe `description` before `.indexOf("scanned")` (2 sites) — a NULL description throws TypeError inside the render promise → whole book renders BLANK |
+| `src/containers/viewer/component.tsx` | `handleRenderBook`: NULL-safe `description` before `.indexOf("scanned")` (2 sites) |
+| `src/pages/reader/component.tsx` | `render()`: NULL-safe `description.indexOf("scanned")` — this ONE SITE in the render() method was the actual crash that caused blank pages. React's render() throws on NULL → silently unmounts → blank page. the viewer's handleRenderBook never gets reached. |
 
 ### IMPORTANT behavioral gotchas (learned the hard way)
 
@@ -36,6 +37,8 @@ fork of `koodo-reader/koodo-reader`. upstream = official repo, origin = `FahadBi
 5. **testConnection "Connection failed" for MEGA in browser** = megajs Blob upload is unreliable in browser. patch skips the real upload test for MEGA and returns true.
 6. **Vercel deploy must run the patch**: `build` script is `node patches/apply-patch.js && react-scripts build` — verify a deployed bundle contains `koodo_sync_data` / `9999999999` strings to confirm the patch applied at build time (comments get stripped; check code strings not comments).
 7. **"Book not exists" on EVERY book click (2026-08-28)** = upstream added an `is_authed` token gate in `redirectBook` (`src/utils/file/bookUtil.ts`). the premium patch only forces Redux auth state (`handleFetchAuthed`), NOT the `is_authed` token, so the gate short-circuits all cloud downloads → "Book not exists" toast. fix: patch drops the `is_authed` check and just tests `isBookExistInCloud`. if this reappears after an upstream merge, verify `bookUtil.ts` is in the patch and the gate is gone.
+8. **blank page + blank gray cover (2026-08-28, same book)** = two NULL fields in books.db. (a) `description` NULL → `pages/reader/component.tsx render()` calls `.indexOf("scanned")` → React render() throws → whole reader page silently unmounts = blank. (b) `cover` NULL → `coverUtil.isCoverExist` does `book.cover !== ""` → `null !== ""` is TRUE → renders `<img src={null}>` = broken gray box, never falls back to the format+name EmptyCover. both fixed in the patch (NULL-safe) AND in the MEGA data (set `description=''`, `cover=''`). **never insert a book with NULL description or cover — use empty strings.**
+9. **web "Restore library" hangs forever** = `restore()` calls `window.electronAPI` (restore.ts:189) which only exists in the desktop app. on web it never resolves → stuck "Restoring..." dialog. it's desktop-only; hard-refresh to clear, and DON'T use Restore on web. on web, fresh library data is pulled by the automatic sync on load (header `handleCloudSync`) — to force it, just reload the page.
 
 ## sync / MEGA data layout
 
@@ -45,8 +48,8 @@ fork of `koodo-reader/koodo-reader`. upstream = official repo, origin = `FahadBi
 - sync records: `/Root/KoodoReader/config/sync.json` — book records named `database.sqlite.books.<key>` with `{operation:"save", time:<ms>}`. a book shows up in the app iff it's in books.db AND has a `save` (not `delete`) sync record.
 - there's also a `/Root/config/` folder (older sync base) — keep books.db + sync.json in sync across BOTH `/Root/KoodoReader/config/` and `/Root/config/` (symmetric), plus `/Root/KoodoReader/book/` files.
 - megatools (scoop) is the CLI for MEGA: `megatools ls/get/put/rm -u <email> -p <pw>`. arg order: `-u/-p` AFTER the subcommand (this build). can't `put` to toplevel `/` — use `/Root`.
-- adding a book: download file → compute md5 → `INSERT INTO books (key,name,author,md5,format,size,page,path,charset,description) VALUES (...,'')` (description='' NOT NULL!), `key = [DateTimeOffset]::Now.ToUnixTimeMilliseconds()` → upload file to `book/<key>.<format>` → upload books.db (delete+put to overwrite) → add `database.sqlite.books.<key> = save` to sync.json → do BOTH config folders.
-- **description must NEVER be NULL (2026-08-28)**: `src/containers/viewer/component.tsx` calls `currentBook.description.indexOf("scanned")` at render time (lines ~262 and ~328) — a NULL description throws TypeError inside the render promise → the whole book renders BLANK (no error toast, just empty page). always set `description=''` (empty string) at insert time, and if a book shows blank, check books.db first. fixed via `UPDATE books SET description='' WHERE key='<key>'` + re-upload both config folders.
+- adding a book: download file → compute md5 → `INSERT INTO books (key,name,author,md5,format,size,page,path,charset,description,cover) VALUES (...,'','')` (description AND cover = '' NOT NULL!), `key = [DateTimeOffset]::Now.ToUnixTimeMilliseconds()` → upload file to `book/<key>.<format>` → upload books.db (delete+put to overwrite) → add `database.sqlite.books.<key> = save` to sync.json → do BOTH config folders.
+- **description AND cover must NEVER be NULL (2026-08-28)**: NULL `description` crashes `pages/reader render()` → blank page; NULL `cover` makes `isCoverExist` return true (bug: `null !== ""`) → broken gray image instead of EmptyCover. always insert `description=''` AND `cover=''` (empty strings). if a book shows blank or a blank cover, check books.db first. fixed via `UPDATE books SET description='', cover='' WHERE key='<key>'` + re-upload both config folders.
 
 ## useful commands
 
