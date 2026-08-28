@@ -24,6 +24,7 @@ fork of `koodo-reader/koodo-reader`. upstream = official repo, origin = `FahadBi
 | `src/utils/request/thirdparty.ts` | `encryptToken`: try/catch around `thirdpartyRequest.encryptToken` (bundled lib THROWS TypeError on `null.data` — must catch); on 400/500 fall back to storing the raw JSON token in local storage and return 200. `decryptToken`: return raw JSON tokens directly if they lack the `#` server marker |
 | `src/utils/common.ts` | `testConnection`: for MEGA in browser, skip the real upload test and return true (megajs Blob upload fails on browser CORS/WebSocket quirks) |
 | `src/utils/file/configUtil.ts` | `getSyncData`/`updateSyncData`: fall back to local storage (`koodo_sync_data_<type>`) instead of erroring when Koodo's server rejects (no real auth) |
+| `src/utils/file/bookUtil.ts` | `redirectBook`: drop the `(await TokenService.getToken("is_authed")) === "yes"` gate added by a later upstream commit — MEGA is credential-bound (no OAuth), so this gate made EVERY cloud download fail with "Book not exists". now just checks `isBookExistInCloud(book.key)` |
 
 ### IMPORTANT behavioral gotchas (learned the hard way)
 
@@ -33,6 +34,7 @@ fork of `koodo-reader/koodo-reader`. upstream = official repo, origin = `FahadBi
 4. **"Decryption failed, error code: invalid params"** = `decryptToken` trying to decrypt a stored token through the server. patch returns raw JSON tokens directly when they lack the `#` marker.
 5. **testConnection "Connection failed" for MEGA in browser** = megajs Blob upload is unreliable in browser. patch skips the real upload test for MEGA and returns true.
 6. **Vercel deploy must run the patch**: `build` script is `node patches/apply-patch.js && react-scripts build` — verify a deployed bundle contains `koodo_sync_data` / `9999999999` strings to confirm the patch applied at build time (comments get stripped; check code strings not comments).
+7. **"Book not exists" on EVERY book click (2026-08-28)** = upstream added an `is_authed` token gate in `redirectBook` (`src/utils/file/bookUtil.ts`). the premium patch only forces Redux auth state (`handleFetchAuthed`), NOT the `is_authed` token, so the gate short-circuits all cloud downloads → "Book not exists" toast. fix: patch drops the `is_authed` check and just tests `isBookExistInCloud`. if this reappears after an upstream merge, verify `bookUtil.ts` is in the patch and the gate is gone.
 
 ## sync / MEGA data layout
 

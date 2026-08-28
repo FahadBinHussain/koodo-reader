@@ -49,6 +49,22 @@ index 874214ec..02bf296f 100644
      let syncUtil = new SyncUtil(driveName, driveConfig);
      // 上传到云端
      let result = await syncUtil.uploadFile(
+diff --git a/src/utils/file/bookUtil.ts b/src/utils/file/bookUtil.ts
+index cadacb4a..0d27536c 100644
+--- a/src/utils/file/bookUtil.ts
++++ b/src/utils/file/bookUtil.ts
+@@ -271,10 +271,7 @@ class BookUtil {
+         id: toastId,
+         position: "bottom-center",
+       });
+-      if (
+-        (await TokenService.getToken("is_authed")) === "yes" &&
+-        (await this.isBookExistInCloud(book.key))
+-      ) {
++      if (await this.isBookExistInCloud(book.key)) {
+         let timer = showDownloadProgress(
+           ConfigService.getItem("defaultSyncOption") || "",
+           "cloud",
 diff --git a/src/utils/file/configUtil.ts b/src/utils/file/configUtil.ts
 index efe4e342..ec8452f9 100644
 --- a/src/utils/file/configUtil.ts
