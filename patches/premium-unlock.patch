@@ -118,7 +118,7 @@ index f0529ea2..d525a8c9 100644
        console.error(error);
      }
 diff --git a/src/utils/common.ts b/src/utils/common.ts
-index 874214ec..9fb0103e 100644
+index 874214ec..649ce01d 100644
 --- a/src/utils/common.ts
 +++ b/src/utils/common.ts
 @@ -734,7 +734,9 @@ export const preCacheAllBooks = async (bookList: Book[]) => {
@@ -147,7 +147,18 @@ index 874214ec..9fb0103e 100644
      let syncUtil = new SyncUtil(driveName, driveConfig);
      // 上传到云端
      let result = await syncUtil.uploadFile(
-@@ -1935,13 +1945,14 @@ export const TEXT_COLORS = [
+@@ -1396,7 +1406,9 @@ export const handleAutoCloudSync = async () => {
+       "defaultSyncOption",
+       syncRes.data.default_sync_option
+     );
+-    ConfigService.setReaderConfig("isEnableKoodoSync", "yes");
++    // This fork uses the external data source directly; Koodo's server-side
++    // sync requires a real Pro token and otherwise reports invalid params.
++    ConfigService.setReaderConfig("isEnableKoodoSync", "no");
+     await TokenService.setToken(
+       syncRes.data.default_sync_option + "_token",
+       syncRes.data.default_sync_token
+@@ -1935,13 +1947,14 @@ export const TEXT_COLORS = [
    "#2C2C2C",
  ];
  export const getDefaultOcrEngine = (currentBook: any) => {
@@ -164,7 +175,7 @@ index 874214ec..9fb0103e 100644
      return "paddle";
    } else {
      return "system-ocr";
-@@ -1978,8 +1989,9 @@ export const getOcrLangList = (engine: string) => {
+@@ -1978,8 +1991,9 @@ export const getOcrLangList = (engine: string) => {
    return list;
  };
  export const getDefaultOcrLang = (engine: string, currentBook: any) => {
