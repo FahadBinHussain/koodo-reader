@@ -78,3 +78,7 @@ settings live in two places, and deploys never touch either:
 - Vercel project `koodo-reader` on account `koodoshen@outlook.com` (token in Bitwarden `vercel.com - koodoshen`, `vcp_` pattern). production alias = `koodoo.vercel.app` (bare preview URLs show Vercel login page — only the production alias serves publicly).
 - deploys automatically from `dev` on push; build runs the premium patch via `prebuild`/`build` scripts.
 - after sync/rebuild: hard-refresh or clear site data to avoid stale IndexedDB book state.
+
+## cloud book recovery gotcha
+
+- Cloud book listings can remain stale after a duplicate is deleted. `BookUtil.redirectBook` attempts the file download directly; if that request fails, the binary for `<book.key>.<format>` is unavailable from the configured provider. The UI names the exact missing file/provider so it can be restored or re-uploaded instead of being mistaken for a routing bug.
