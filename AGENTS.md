@@ -82,3 +82,4 @@ settings live in two places, and deploys never touch either:
 ## cloud book recovery gotcha
 
 - Cloud book listings can remain stale after a duplicate is deleted. `BookUtil.redirectBook` attempts the file download directly; if that request fails, the binary for `<book.key>.<format>` is unavailable from the configured provider. The UI names the exact missing file/provider so it can be restored or re-uploaded instead of being mistaken for a routing bug.
+- Two browsers/devices can import the same file concurrently while each has a different local database. The old import path generated a new timestamp key on both devices, and sync merged both rows because it compared keys rather than MD5. Imports now reuse the existing cloud book key; deleting one local duplicate also leaves its cloud binary untouched while another same-MD5 row remains.
