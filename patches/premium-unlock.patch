@@ -277,7 +277,7 @@ index 874214ec..649ce01d 100644
        : "textOcrLang"
    );
 diff --git a/src/utils/file/bookUtil.ts b/src/utils/file/bookUtil.ts
-index cadacb4a..bc3e2209 100644
+index cadacb4a..e47395b6 100644
 --- a/src/utils/file/bookUtil.ts
 +++ b/src/utils/file/bookUtil.ts
 @@ -13,6 +13,7 @@ import { getCloudConfig } from "./common";
@@ -371,20 +371,136 @@ index cadacb4a..bc3e2209 100644
    static async deleteCloudBook(key: string, format: string) {
      let isAuthed = await TokenService.getToken("is_authed");
      if (isAuthed !== "yes") {
-@@ -615,6 +644,51 @@ class BookUtil {
+@@ -615,6 +644,167 @@ class BookUtil {
        return cloudBookList;
      }
    }
 +  static async repairBooksFromCloudFiles(
 +    cloudBooks: Book[] = []
 +  ): Promise<number> {
++    const service = ConfigService.getItem("defaultSyncOption");
 +    const cloudFiles = await this.getCloudBookList();
 +    const knownKeys = new Set((cloudBooks || []).map((book) => String(book.key)));
 +    const localBooks: Book[] =
 +      (await DatabaseService.getAllRecords("books")) || [];
 +    const localKeys = new Set(localBooks.map((book) => String(book.key)));
-+    const supported = /\.(epub|pdf|mobi|azw3|azw|txt|html|xhtml|fb2|cbz|cbr|cbt|cb7)$/i;
 +    let repaired = 0;
++    const supported = /\.(epub|pdf|mobi|azw3|azw|txt|html|xhtml|fb2|cbz|cbr|cbt|cb7)$/i;
++
++    // Browser uploads can land in MEGA outside Koodo's configured `book`
++    // folder. Use the authenticated picker connection to find those files,
++    // then move them into the real sync folder so the normal download path
++    // and metadata database agree again.
++    if (!isElectron && service) {
++      const targetSync = await SyncService.getSyncUtil();
++      const pickerSync = await SyncService.getPickerUtil(service);
++      const folders: Array<{ path: string; depth: number }> = [
++        { path: "", depth: 0 },
++      ];
++      const visited = new Set<string>();
++      const candidates: Array<{
++        folder: string;
++        name: string;
++        size?: number;
++      }> = [];
++      const maxFolders = 40;
++      const maxFiles = 300;
++
++      while (folders.length > 0 && visited.size < maxFolders) {
++        const current = folders.shift()!;
++        if (visited.has(current.path)) {
++          continue;
++        }
++        visited.add(current.path);
++        const entries = await pickerSync.listFileInfos(current.path);
++        for (const entry of entries || []) {
++          const name = String(entry?.name || "");
++          if (!name) {
++            continue;
++          }
++          if (entry.type === "folder") {
++            // Avoid walking an entire drive, while covering the common
++            // hand-upload locations used for ebooks.
++            const interesting = /book|ebook|koodo|reader|library/i.test(name);
++            if (current.depth < 2 || interesting) {
++              folders.push({
++                path: current.path ? `${current.path}/${name}` : name,
++                depth: current.depth + 1,
++              });
++            }
++            continue;
++          }
++          if (supported.test(name) && candidates.length < maxFiles) {
++            candidates.push({
++              folder: current.path,
++              name,
++              size: Number(entry.size) || 0,
++            });
++          }
++        }
++      }
++
++      const configuredBookFiles = new Set(
++        (cloudFiles || []).map((file) => String(file))
++      );
++      let moved = 0;
++      for (const candidate of candidates) {
++        // Files already visible in the configured folder need no migration.
++        if (!candidate.folder || candidate.folder.toLowerCase() === "book") {
++          continue;
++        }
++        if (configuredBookFiles.has(candidate.name)) {
++          continue;
++        }
++        const match = candidate.name.match(supported);
++        if (!match) {
++          continue;
++        }
++        const extension = match[1].toLowerCase();
++        const baseName = candidate.name.slice(0, -match[0].length);
++        const key = baseName;
++        if (knownKeys.has(key) || localKeys.has(key)) {
++          continue;
++        }
++        const buffer = await pickerSync.downloadFile(
++          candidate.name,
++          candidate.folder
++        );
++        await targetSync.uploadFile(
++          candidate.name,
++          "book",
++          new Blob([buffer])
++        );
++        await pickerSync.deleteFile(candidate.name, candidate.folder);
++        await DatabaseService.saveRecord(
++          {
++            key,
++            name: baseName || key,
++            author: "",
++            description: "",
++            md5: "",
++            cover: "",
++            format: extension.toUpperCase(),
++            publisher: "",
++            size: candidate.size || buffer.byteLength,
++            page: 0,
++            path: "",
++            charset: "",
++          } as Book,
++          "books"
++        );
++        knownKeys.add(key);
++        localKeys.add(key);
++        configuredBookFiles.add(candidate.name);
++        repaired++;
++        moved++;
++      }
++      if (moved > 0) {
++        toast.success(
++          `MEGA folder recovery moved ${moved} book${moved === 1 ? "" : "s"} into Koodo's library`
++        );
++      }
++    }
 +
 +    for (const file of cloudFiles || []) {
 +      const match = String(file).match(supported);
