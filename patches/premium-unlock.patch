@@ -277,7 +277,7 @@ index 874214ec..649ce01d 100644
        : "textOcrLang"
    );
 diff --git a/src/utils/file/bookUtil.ts b/src/utils/file/bookUtil.ts
-index cadacb4a..dd867ec5 100644
+index cadacb4a..123e3b75 100644
 --- a/src/utils/file/bookUtil.ts
 +++ b/src/utils/file/bookUtil.ts
 @@ -13,6 +13,7 @@ import { getCloudConfig } from "./common";
@@ -385,7 +385,7 @@ index cadacb4a..dd867ec5 100644
 +      (await DatabaseService.getAllRecords("books")) || [];
 +    const localKeys = new Set(localBooks.map((book) => String(book.key)));
 +    let repaired = 0;
-+    const supported = /\.(epub|pdf|mobi|azw3|azw|txt|html|xhtml|fb2|cbz|cbr|cbt|cb7)$/i;
++    const supported = /\.(epub|pdf|txt|mobi|azw3|azw|htm|html|xml|xhtml|mhtml|docx|md|fb2|cbz|cbt|cbr|cb7)$/i;
 +
 +    // Browser uploads can land in MEGA outside Koodo's configured `book`
 +    // folder. Use the authenticated picker connection to find those files,
