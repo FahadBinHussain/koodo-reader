@@ -106,10 +106,10 @@ index 0ea159ce..5567e760 100644
        this.setState({ isFinishOutput: true });
      }
 diff --git a/src/containers/header/component.tsx b/src/containers/header/component.tsx
-index 69070a88..0784159d 100644
+index 69070a88..d9b415a6 100644
 --- a/src/containers/header/component.tsx
 +++ b/src/containers/header/component.tsx
-@@ -463,6 +463,34 @@ class Header extends React.Component<HeaderProps, HeaderState> {
+@@ -463,6 +463,27 @@ class Header extends React.Component<HeaderProps, HeaderState> {
    getCompareResult = async () => {
      let localSyncRecords = ConfigService.getAllSyncRecord();
      let cloudSyncRecords = await ConfigUtil.getCloudConfig("sync");
@@ -117,21 +117,14 @@ index 69070a88..0784159d 100644
 +    // valid books.db in the data source manually. Recover those metadata rows
 +    // instead of silently hiding them behind the missing sync records.
 +    const cloudBooks = await ConfigUtil.getCloudDatabase("books");
-+    const cloudFiles = new Set(
-+      (await BookUtil.getCloudBookList()).map((file) => file.toLowerCase())
-+    );
 +    for (const book of cloudBooks || []) {
 +      if (!book?.key || !book?.format) {
 +        continue;
 +      }
 +      const recordKey = `database.sqlite.books.${book.key}`;
-+      const cloudFile = `${book.key}.${book.format.toLowerCase()}`;
-+      // A stale local delete must not hide a real cloud binary. This is the
-+      // recovery case after another device deleted only one duplicate row.
-+      if (
-+        localSyncRecords[recordKey]?.operation === "delete" &&
-+        cloudFiles.has(cloudFile)
-+      ) {
++      // A stale local delete must not hide a valid cloud metadata row. The
++      // download path will report a clear error if its binary is unavailable.
++      if (localSyncRecords[recordKey]?.operation === "delete") {
 +        delete localSyncRecords[recordKey];
 +      }
 +      if (!cloudSyncRecords[recordKey] && !localSyncRecords[recordKey]) {
