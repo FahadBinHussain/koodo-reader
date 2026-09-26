@@ -277,7 +277,7 @@ index 874214ec..649ce01d 100644
        : "textOcrLang"
    );
 diff --git a/src/utils/file/bookUtil.ts b/src/utils/file/bookUtil.ts
-index cadacb4a..e47395b6 100644
+index cadacb4a..dd867ec5 100644
 --- a/src/utils/file/bookUtil.ts
 +++ b/src/utils/file/bookUtil.ts
 @@ -13,6 +13,7 @@ import { getCloudConfig } from "./common";
@@ -371,7 +371,7 @@ index cadacb4a..e47395b6 100644
    static async deleteCloudBook(key: string, format: string) {
      let isAuthed = await TokenService.getToken("is_authed");
      if (isAuthed !== "yes") {
-@@ -615,6 +644,167 @@ class BookUtil {
+@@ -615,6 +644,173 @@ class BookUtil {
        return cloudBookList;
      }
    }
@@ -403,8 +403,8 @@ index cadacb4a..e47395b6 100644
 +        name: string;
 +        size?: number;
 +      }> = [];
-+      const maxFolders = 40;
-+      const maxFiles = 300;
++      const maxFolders = 500;
++      const maxFiles = 1000;
 +
 +      while (folders.length > 0 && visited.size < maxFolders) {
 +        const current = folders.shift()!;
@@ -419,10 +419,9 @@ index cadacb4a..e47395b6 100644
 +            continue;
 +          }
 +          if (entry.type === "folder") {
-+            // Avoid walking an entire drive, while covering the common
-+            // hand-upload locations used for ebooks.
-+            const interesting = /book|ebook|koodo|reader|library/i.test(name);
-+            if (current.depth < 2 || interesting) {
++            // Walk enough depth to cover nested MEGA libraries. The hard
++            // folder/file caps prevent a pathological full-drive traversal.
++            if (current.depth < 6) {
 +              folders.push({
 +                path: current.path ? `${current.path}/${name}` : name,
 +                depth: current.depth + 1,
@@ -445,11 +444,13 @@ index cadacb4a..e47395b6 100644
 +      );
 +      let moved = 0;
 +      for (const candidate of candidates) {
-+        // Files already visible in the configured folder need no migration.
-+        if (!candidate.folder || candidate.folder.toLowerCase() === "book") {
-+          continue;
-+        }
-+        if (configuredBookFiles.has(candidate.name)) {
++        const normalizedFolder = candidate.folder
++          .replace(/\\/g, "/")
++          .replace(/^\/+|\/+$/g, "")
++          .toLowerCase();
++        const isTargetFolder =
++          normalizedFolder === "book" || normalizedFolder.endsWith("/book");
++        if (!isTargetFolder && configuredBookFiles.has(candidate.name)) {
 +          continue;
 +        }
 +        const match = candidate.name.match(supported);
@@ -462,16 +463,19 @@ index cadacb4a..e47395b6 100644
 +        if (knownKeys.has(key) || localKeys.has(key)) {
 +          continue;
 +        }
-+        const buffer = await pickerSync.downloadFile(
-+          candidate.name,
-+          candidate.folder
-+        );
-+        await targetSync.uploadFile(
-+          candidate.name,
-+          "book",
-+          new Blob([buffer])
-+        );
-+        await pickerSync.deleteFile(candidate.name, candidate.folder);
++        let buffer: ArrayBuffer | null = null;
++        if (!isTargetFolder) {
++          buffer = await pickerSync.downloadFile(
++            candidate.name,
++            candidate.folder
++          );
++          await targetSync.uploadFile(
++            candidate.name,
++            "book",
++            new Blob([buffer])
++          );
++          await pickerSync.deleteFile(candidate.name, candidate.folder);
++        }
 +        await DatabaseService.saveRecord(
 +          {
 +            key,
@@ -482,7 +486,7 @@ index cadacb4a..e47395b6 100644
 +            cover: "",
 +            format: extension.toUpperCase(),
 +            publisher: "",
-+            size: candidate.size || buffer.byteLength,
++            size: candidate.size || (buffer ? buffer.byteLength : 0),
 +            page: 0,
 +            path: "",
 +            charset: "",
@@ -493,7 +497,9 @@ index cadacb4a..e47395b6 100644
 +        localKeys.add(key);
 +        configuredBookFiles.add(candidate.name);
 +        repaired++;
-+        moved++;
++        if (!isTargetFolder) {
++          moved++;
++        }
 +      }
 +      if (moved > 0) {
 +        toast.success(
