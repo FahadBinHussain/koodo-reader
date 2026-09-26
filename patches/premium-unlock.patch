@@ -105,6 +105,33 @@ index 0ea159ce..5567e760 100644
        this.textAccumulator = "";
        this.setState({ isFinishOutput: true });
      }
+diff --git a/src/containers/header/component.tsx b/src/containers/header/component.tsx
+index 69070a88..da92c3ec 100644
+--- a/src/containers/header/component.tsx
++++ b/src/containers/header/component.tsx
+@@ -463,6 +463,22 @@ class Header extends React.Component<HeaderProps, HeaderState> {
+   getCompareResult = async () => {
+     let localSyncRecords = ConfigService.getAllSyncRecord();
+     let cloudSyncRecords = await ConfigUtil.getCloudConfig("sync");
++    // A device can upload books.db before sync.json, or a user can place a
++    // valid books.db in the data source manually. Recover those metadata rows
++    // instead of silently hiding them behind the missing sync records.
++    const cloudBooks = await ConfigUtil.getCloudDatabase("books");
++    for (const book of cloudBooks || []) {
++      if (!book?.key || !book?.format) {
++        continue;
++      }
++      const recordKey = `database.sqlite.books.${book.key}`;
++      if (!cloudSyncRecords[recordKey] && !localSyncRecords[recordKey]) {
++        cloudSyncRecords[recordKey] = {
++          operation: "save",
++          time: Date.now(),
++        };
++      }
++    }
+     return await SyncHelper.compareAll(
+       localSyncRecords,
+       cloudSyncRecords,
 diff --git a/src/containers/viewer/component.tsx b/src/containers/viewer/component.tsx
 index 1ecf70e7..06b94fad 100644
 --- a/src/containers/viewer/component.tsx
