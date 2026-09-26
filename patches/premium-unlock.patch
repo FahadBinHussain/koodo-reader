@@ -277,7 +277,7 @@ index 874214ec..649ce01d 100644
        : "textOcrLang"
    );
 diff --git a/src/utils/file/bookUtil.ts b/src/utils/file/bookUtil.ts
-index cadacb4a..123e3b75 100644
+index cadacb4a..157a70bd 100644
 --- a/src/utils/file/bookUtil.ts
 +++ b/src/utils/file/bookUtil.ts
 @@ -13,6 +13,7 @@ import { getCloudConfig } from "./common";
@@ -371,7 +371,7 @@ index cadacb4a..123e3b75 100644
    static async deleteCloudBook(key: string, format: string) {
      let isAuthed = await TokenService.getToken("is_authed");
      if (isAuthed !== "yes") {
-@@ -615,6 +644,173 @@ class BookUtil {
+@@ -615,6 +644,178 @@ class BookUtil {
        return cloudBookList;
      }
    }
@@ -504,6 +504,11 @@ index cadacb4a..123e3b75 100644
 +      if (moved > 0) {
 +        toast.success(
 +          `MEGA folder recovery moved ${moved} book${moved === 1 ? "" : "s"} into Koodo's library`
++        );
++      }
++      if (candidates.length > 0) {
++        toast.success(
++          `MEGA folder recovery scanned ${visited.size} folders, found ${candidates.length} supported files, and indexed ${repaired} records`
 +        );
 +      }
 +    }
