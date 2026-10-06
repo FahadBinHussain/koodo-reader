@@ -58,7 +58,7 @@ fork of `koodo-reader/koodo-reader`. upstream = official repo, origin = `FahadBi
 
 - verify patch applies to clean upstream: `git worktree add /tmp/kwt upstream/dev && (cd /tmp/kwt && git apply --check <repo>/patches/premium-unlock.patch)`
 - regenerate patch after editing patched files: `git diff upstream/dev -- src/store/actions/manager.tsx src/utils/common.ts src/utils/file/configUtil.ts src/utils/request/thirdparty.ts src/utils/request/user.ts > patches/premium-unlock.patch` then normalize to LF.
-- browser automation of the bind flow: mainframe agent-browser; navigate Settings gear (top bar) → Sync and backup → Add data source → MEGA (Pro) → fill email/password → Bind. `dataSourceList`/`defaultSyncOption` in localStorage confirm the bind.
+- browser automation of the bind flow: browser-use skill (real Edge); navigate Settings gear (top bar) → Sync and backup → Add data source → MEGA (Pro) → fill email/password → Bind. `dataSourceList`/`defaultSyncOption` in localStorage confirm the bind.
 - MEGA account helper: `automata\mega.nz\mega-account.ps1` (run/upload, vault-backed, stateless).
 
 ## settings & data persistence across deploys
