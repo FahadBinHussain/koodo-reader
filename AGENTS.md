@@ -11,14 +11,17 @@ fork of `koodo-reader/koodo-reader`. upstream = official repo, origin = `FahadBi
 - `patches/sync-upstream.ps1` — future upstream merge workflow (fetch → reset to upstream → verify patch applies → apply)
 - `package.json` scripts:
   - `premium:apply` → `node patches/apply-patch.js`
-  - `premium:revert` → `git checkout -- <all 10 patched files>` (manager.tsx, common.ts, configUtil.ts, thirdparty.ts, user.ts, bookUtil.ts, viewer/component.tsx, pages/reader/component.tsx, coverUtil.ts, popupTrans/component.tsx)
+  - `premium:revert` → `git checkout -- <all 13 patched files>` (manager.tsx, common.ts, configUtil.ts, thirdparty.ts, user.ts, bookUtil.ts, viewer/component.tsx, pages/reader/component.tsx, coverUtil.ts, popupTrans/component.tsx, dialogs/deleteDialog/component.tsx, importLocal/component.tsx, containers/header/component.tsx — keep this list in sync with the patch when it grows)
   - `prebuild` AND `build` both run `node patches/apply-patch.js` so Vercel deploys the patched code automatically
 - `.gitattributes` — `*.patch text eol=lf` (CRITICAL: a CRLF patch file breaks `git apply` on Windows; PowerShell `>` / `Set-Content` writes CRLF. write patch files via `git show <rev>:patches/premium-unlock.patch` piped through python, or normalize with `.Replace("\`r\`n","\`n")`)
 
-### what the premium patch does (10 files)
+### what the premium patch does (13 files)
 
 | file | change |
 |------|--------|
+| `src/components/dialogs/deleteDialog/component.tsx` | `deleteBook`: look up whether ANOTHER row shares the same md5; pass `!duplicateBook` to `BookUtil.deleteBook` so deleting one local duplicate never removes the shared cloud binary |
+| `src/components/importLocal/component.tsx` | `addBook`: if a cloud row with the same md5 already exists, reuse ITS key instead of minting a new one (two devices importing the same file can no longer create duplicate books) + a `toast.success("Existing cloud book record reused")` |
+| `src/containers/header/component.tsx` | `getCompareResult`: reconcile metadata against the cloud `books.db` — recover rows whose `sync.json` record is missing, drop stale local `delete` records that would hide a valid cloud row (call `BookUtil.repairBooksFromCloudFiles` first) |
 | `src/store/actions/manager.tsx` | `handleFetchUserInfo`: suppress support/upgrade dialog; `handleFetchAuthed`: always authed=true (Pro) |
 | `src/utils/request/user.ts` | `fetchUserInfo`: keep REAL server call but force `data.type="pro"` + `valid_until=9999999999`. do NOT fully mock it (breaking real auth breaks decrypt) |
 | `src/utils/request/thirdparty.ts` | `encryptToken`: try/catch around `thirdpartyRequest.encryptToken` (bundled lib THROWS TypeError on `null.data` — must catch); on 400/500 fall back to storing the raw JSON token in local storage and return 200. `decryptToken`: return raw JSON tokens directly if they lack the `#` server marker |
@@ -60,8 +63,9 @@ fork of `koodo-reader/koodo-reader`. upstream = official repo, origin = `FahadBi
 
 ## useful commands
 
-- verify patch applies to clean upstream: `git worktree add /tmp/kwt upstream/dev && (cd /tmp/kwt && git apply --check <repo>/patches/premium-unlock.patch)`
-- regenerate patch after editing patched files: `git diff upstream/dev -- src/store/actions/manager.tsx src/utils/common.ts src/utils/file/configUtil.ts src/utils/request/thirdparty.ts src/utils/request/user.ts > patches/premium-unlock.patch` then normalize to LF.
+- verify patch applies to clean upstream: `$mb = git merge-base upstream/dev HEAD` (currently `7d40df41…`) → `git worktree add C:\tmp\kwt $mb` → `(cd C:\tmp\kwt; git apply --check <repo>\patches\premium-unlock.patch)` → `git worktree remove C:\tmp\kwt`. the base is the **merge-base, never `upstream/dev`** — upstream moves ahead, and diffing against it silently absorbs upstream's changes into our patch (that is how a "small fix" turns into a 100 KB diff).
+- regenerate patch after editing patched files: `$mb = git merge-base upstream/dev HEAD` → `git diff --output=patches/premium-unlock.patch $mb -- src/store/actions/manager.tsx src/utils/common.ts src/utils/file/configUtil.ts src/utils/request/thirdparty.ts src/utils/request/user.ts src/utils/file/bookUtil.ts src/containers/viewer/component.tsx src/pages/reader/component.tsx src/utils/file/coverUtil.ts src/components/popups/popupTrans/component.tsx src/components/dialogs/deleteDialog/component.tsx src/components/importLocal/component.tsx src/containers/header/component.tsx`. use `--output=` (git writes LF bytes itself); PowerShell `>` / `Set-Content` write CRLF and break `git apply` on a repo with `.gitattributes` `*.patch text eol=lf`. get the current file list with `git diff --name-only $mb -- src/`. after regenerating, round-trip it: `git checkout -- src` → `node patches/apply-patch.js` must print applied, a second run must print already applied.
+- **local `npm install` does NOT work on this box (2026-10-09)**: it dies compiling `better-sqlite3` (`gyp ERR! find VS` — no MSVC/VS build tools installed) and leaves `node_modules` empty, so no local `react-scripts build` is possible that way. `pnpm` fails too (`ERR_PNPM_EXOTIC_SUBDEP` on a git-resolved subdependency). **Vercel's fresh install is the build of record** — it succeeds, and CRA type-checks there, so a green deploy IS the compile proof: confirm it by fetching `https://koodoo.vercel.app/` → `static/js/main.<hash>.js` and grepping for a patch marker string (see gotcha 6). don't burn time re-proving the build locally.
 - browser automation of the bind flow: browser-use skill (real Edge); navigate Settings gear (top bar) → Sync and backup → Add data source → MEGA (Pro) → fill email/password → Bind. `dataSourceList`/`defaultSyncOption` in localStorage confirm the bind.
 - MEGA account helper: `automata\mega.nz\mega-account.ps1` (run/upload, vault-backed, stateless).
 
