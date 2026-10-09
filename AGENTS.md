@@ -73,7 +73,7 @@ settings live in two places, and deploys never touch either:
    - ⚠️ each Vercel preview URL gets a random subdomain (e.g. `koodo-reader-abc123.vercel.app`) — different origin, so it looks like a fresh app. always use the stable alias.
    - localStorage is cleared by: browser "clear site data" action, browser cache wipe, or switching browsers/devices. it does NOT survive those.
 
-2. **library data** (books, reading progress, bookmarks, notes) → MEGA cloud via Koodo Sync at `/Root/KoodoReader/config/books.db` + `sync.json` (and `/Root/KoodoReader/book/<key>.<format>` files). this survives literally everything — deploys, browser switches, fresh computers — because it lives in the MEGA account. on a new browser, just connect MEGA sync and it pulls everything back.
+2. **library data** (books, reading progress, bookmarks, notes) → MEGA cloud at `/KoodoReader/config/books.db` + `sync.json` (and `/KoodoReader/book/<key>.<format>` files, older base `/config/`). this survives literally everything — deploys, browser switches, fresh computers — because it lives in the MEGA account (the *app's* account — see the two-account gotcha above). on a new browser, just connect MEGA sync and it pulls everything back.
 
 **bottom line:** Vercel = just the app code (replaced each deploy). settings = browser + MEGA (never touched by deploys). the whole reason we set up the MEGA sync path is so user data outlives deploys.
 
