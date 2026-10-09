@@ -106,10 +106,24 @@ index 0ea159ce..5567e760 100644
        this.setState({ isFinishOutput: true });
      }
 diff --git a/src/containers/header/component.tsx b/src/containers/header/component.tsx
-index 69070a88..538936d9 100644
+index 69070a88..218905af 100644
 --- a/src/containers/header/component.tsx
 +++ b/src/containers/header/component.tsx
-@@ -463,6 +463,28 @@ class Header extends React.Component<HeaderProps, HeaderState> {
+@@ -393,6 +393,13 @@ class Header extends React.Component<HeaderProps, HeaderState> {
+     }
+   };
+   beforeSync = async (userInfo: any) => {
++    // Start every sync from a fresh view of the remote: the cached sync
++    // client keeps the data source's file tree as it was at first login, so
++    // a sync driven from a long-lived tab reads dead/old nodes (cloud config
++    // comes back empty -> the merge uploads local state over the cloud) and
++    // re-creates config files as duplicate nodes. See
++    // SyncService.resetForFreshSync.
++    SyncService.resetForFreshSync();
+     if (!ConfigService.getItem("defaultSyncOption")) {
+       toast.error(
+         this.props.t(
+@@ -463,6 +470,75 @@ class Header extends React.Component<HeaderProps, HeaderState> {
    getCompareResult = async () => {
      let localSyncRecords = ConfigService.getAllSyncRecord();
      let cloudSyncRecords = await ConfigUtil.getCloudConfig("sync");
@@ -118,6 +132,53 @@ index 69070a88..538936d9 100644
 +    // instead of silently hiding them behind the missing sync records.
 +    const cloudBooks = await ConfigUtil.getCloudDatabase("books");
 +    await BookUtil.repairBooksFromCloudFiles(cloudBooks || []);
++    // A sync.json that is missing/empty while the cloud books.db still has
++    // rows means the cloud record state is broken (or was read as empty).
++    // The merge would then treat every local record as cloud-less and upload
++    // this device's whole library over the cloud one. Refuse loudly instead
++    // of silently reverting books deleted or renamed elsewhere.
++    const isBookRecord = (key: string) =>
++      key.startsWith("database.sqlite.books.");
++    const hasCloudBookRecords = Object.keys(cloudSyncRecords).some(
++      isBookRecord
++    );
++    const hasLocalBookRecords = Object.keys(localSyncRecords).some(
++      isBookRecord
++    );
++    if (
++      !hasCloudBookRecords &&
++      hasLocalBookRecords &&
++      (cloudBooks || []).length > 0
++    ) {
++      toast.error(
++        this.props.t(
++          "Cloud sync records are missing while the cloud library still has books. Syncing now would overwrite the cloud library with this device's copy. Please restore config/sync.json in your data source, then sync again."
++        ),
++        { id: "syncing", duration: 8000 }
++      );
++      throw new Error(
++        "cloud sync records are missing; refusing to overwrite the cloud library"
++      );
++    }
++    // Newest writer wins for metadata rows: when the cloud record is NEWER
++    // than the local one for the same key, drop the local record so the merge
++    // treats the key as cloud-only and PULLS the cloud row (renames, author
++    // or md5 fixes made on another device or edited directly in the data
++    // source). Upstream's merge is a no-op for save+save and then uploads the
++    // whole local books.db, so without this every device keeps clobbering
++    // newer cloud metadata with its own stale copy.
++    for (const recordKey of Object.keys(cloudSyncRecords)) {
++      if (!recordKey.startsWith("database.sqlite.")) continue;
++      const cloudRecord = cloudSyncRecords[recordKey];
++      const localRecord = localSyncRecords[recordKey];
++      if (
++        cloudRecord?.operation === "save" &&
++        localRecord?.operation === "save" &&
++        (cloudRecord.time || 0) > (localRecord.time || 0)
++      ) {
++        delete localSyncRecords[recordKey];
++      }
++    }
 +    for (const book of cloudBooks || []) {
 +      if (!book?.key || !book?.format) {
 +        continue;
@@ -767,3 +828,28 @@ index 46f22d00..2612889c 100644
    return response;
  };
  export const updateUserConfig = async (config: any) => {
+diff --git a/src/utils/storage/syncService.ts b/src/utils/storage/syncService.ts
+index dbfcc8d5..bd1b6746 100644
+--- a/src/utils/storage/syncService.ts
++++ b/src/utils/storage/syncService.ts
+@@ -26,6 +26,20 @@ class SyncService {
+       delete this.syncUtilCache[service];
+     }
+   }
++  // The adapters cache the remote for the whole page session: SyncUtil keeps
++  // one megajs Storage whose node tree was snapshotted at login, and
++  // getSyncUtil() keeps that SyncUtil forever. Anything changed outside this
++  // tab (another device syncing, rclone edits) is invisible: reads resolve to
++  // dead nodes and come back false, which callers read as "{}" - so sync
++  // believes the cloud is EMPTY and uploads this device's whole state over
++  // it - and uploads never find the existing node and create duplicates
++  // instead. Drop the cache at the start of every sync so the next
++  // getSyncUtil() logs in again and re-lists the remote. In-flight tasks keep
++  // their old client; only new work gets the fresh one.
++  static resetForFreshSync() {
++    this.syncUtilCache = {};
++    this.pickerUtilCache = {};
++  }
+   static async getPickerUtil(service: string) {
+     if (!this.pickerUtilCache[service] || (await isTokenExpired(service))) {
+       let config = await getCloudConfig(service);
