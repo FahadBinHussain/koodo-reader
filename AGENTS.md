@@ -59,6 +59,16 @@ fork of `koodo-reader/koodo-reader`. upstream = official repo, origin = `FahadBi
 - **megajs creates a duplicate node per upload**: same-name `sync.json`/`books.db`/`config.json` accumulate in those config dirs, and the app resolves them with `find(name === o)` (whichever node MEGA returns first) — a stale duplicate silently shadows a fresh one. purge duplicates (`rclone deletefile` in a loop until `rclone lsf` is clean) **before** pushing new config files.
 - rclone is the CLI for MEGA here (megatools can't log in to this v3 account): `rclone lsf/lsl/copyto/deletefile mega:<path>` with `RCLONE_CONFIG` pointing at an isolated config (type/user/pass only). arg for forced overwrite: `--update` (see mega.nz AGENTS for the same-size-skip trap).
 - adding a book: download file → compute md5 → `INSERT INTO books (key,name,author,md5,format,size,page,path,charset,description,cover) VALUES (...,'','')` (description AND cover = '' NOT NULL!), `key = [DateTimeOffset]::Now.ToUnixTimeMilliseconds()` → upload file to `book/<key>.<format>` → upload books.db (delete+put to overwrite) → add `database.sqlite.books.<key> = save` to sync.json → do BOTH config folders.
+- **renaming/deleting rows in the cloud only sticks if the browser PULLS them (2026-10-09)**: a tab
+  loaded BEFORE the edit pushes its local records wholesale and reverts the surgery (verified: 3
+  delete records + a row purge survived 5 min of polling, then a 10:30 app push restored all 41 rows
+  and overwrote every record time). so after any cloud-side `books.db`/`sync.json` edit: tell the
+  user to reload the tab right away, re-verify ~5 min later (row count + the exact record times),
+  and re-apply if it came back. renames propagate by bumping that key's `save` record to now — and
+  always fill `md5` while renaming (empty-md5 rows dodge duplicate detection entirely).
+- **rows named after a ms-timestamp** (`1772101994390` etc.) = broken imports with empty
+  author/md5. recover the real title from the file itself (epub OPF `dc:title`/`dc:creator`, pdf
+  `/Title`+`/Author`) instead of guessing — 2 of the 4 turned out to be duplicates that way.
 - **description AND cover must NEVER be NULL (2026-08-28)**: NULL `description` crashes `pages/reader render()` → blank page; NULL `cover` makes `isCoverExist` return true (bug: `null !== ""`) → broken gray image instead of EmptyCover. always insert `description=''` AND `cover=''` (empty strings). if a book shows blank or a blank cover, check books.db first. fixed via `UPDATE books SET description='', cover='' WHERE key='<key>'` + re-upload both config folders.
 
 ## useful commands
