@@ -106,7 +106,7 @@ index 0ea159ce..5567e760 100644
        this.setState({ isFinishOutput: true });
      }
 diff --git a/src/containers/header/component.tsx b/src/containers/header/component.tsx
-index 69070a88..218905af 100644
+index 69070a88..031d5e72 100644
 --- a/src/containers/header/component.tsx
 +++ b/src/containers/header/component.tsx
 @@ -393,6 +393,13 @@ class Header extends React.Component<HeaderProps, HeaderState> {
@@ -123,9 +123,94 @@ index 69070a88..218905af 100644
      if (!ConfigService.getItem("defaultSyncOption")) {
        toast.error(
          this.props.t(
-@@ -463,6 +470,75 @@ class Header extends React.Component<HeaderProps, HeaderState> {
+@@ -462,7 +469,155 @@ class Header extends React.Component<HeaderProps, HeaderState> {
+   };
    getCompareResult = async () => {
      let localSyncRecords = ConfigService.getAllSyncRecord();
++    const isBookRecord = (key: string) =>
++      key.startsWith("database.sqlite.books.");
++    const hasLocalBookRecords = Object.keys(localSyncRecords).some(
++      isBookRecord
++    );
++    // downloadFile collapses "the session could not connect" and "the file
++    // is missing" into the same `false`, and the merge reads empty cloud
++    // records as "nothing is in the cloud" - it then uploads this device's
++    // whole library over the cloud one (the cloud-side cleanup was reverted
++    // by exactly such pushes at 14:44 and 16:45 on 2026-10-10, both carrying
++    // this device's stale record times). Probe the data source BEFORE
++    // trusting any read: a throwing getRoot() means the session never
++    // connected, and a file the fresh listing sees but downloadFile cannot
++    // return is a read-layer failure. Either way, with a local library at
++    // stake, abort loudly instead of pushing a stale copy. Only the MEGA
++    // adapter exposes `remote.getRoot`; the listed-but-unreadable check
++    // works for every provider whose listing is honest.
++    if (hasLocalBookRecords) {
++      const syncUtil = (await SyncService.getSyncUtil()) as any;
++      const canProbeConnection =
++        !!syncUtil && !!syncUtil.remote && !!syncUtil.remote.getRoot;
++      let connectionOk = !canProbeConnection;
++      for (
++        let attempt = 0;
++        canProbeConnection && !connectionOk && attempt < 2;
++        attempt++
++      ) {
++        if (attempt > 0) {
++          await new Promise((resolve) => setTimeout(resolve, 1500));
++        }
++        try {
++          await syncUtil.remote.getRoot();
++          connectionOk = true;
++        } catch (error) {
++          connectionOk = false;
++        }
++      }
++      if (!connectionOk) {
++        toast.error(
++          this.props.t(
++            "Could not connect to the data source (login failed). Sync aborted so this device cannot overwrite the cloud library with its local copy. Please check your data source credentials or connection, then sync again."
++          ),
++          { id: "syncing", duration: 8000 }
++        );
++        throw new Error(
++          "data source connection failed; refusing to sync to avoid overwriting the cloud library"
++        );
++      }
++      let rawSync: any = false;
++      let rawBooks: any = false;
++      try {
++        rawSync = await syncUtil.downloadFile("sync.json", "config");
++      } catch (error) {
++        rawSync = false;
++      }
++      try {
++        rawBooks = await syncUtil.downloadFile("books.db", "config");
++      } catch (error) {
++        rawBooks = false;
++      }
++      let listedConfigNames: any[] = [];
++      try {
++        const listed = await syncUtil.listFiles("config");
++        if (Array.isArray(listed)) {
++          listedConfigNames = listed;
++        }
++      } catch (error) {
++        listedConfigNames = [];
++      }
++      const listedButUnreadable =
++        (listedConfigNames.indexOf("sync.json") > -1 && rawSync === false) ||
++        (listedConfigNames.indexOf("books.db") > -1 && rawBooks === false);
++      if (listedButUnreadable) {
++        toast.error(
++          this.props.t(
++            "sync.json or books.db exists in the data source but could not be read (download failed). Sync aborted so this device cannot overwrite the cloud library with its local copy. Please check your data source connection, then sync again."
++          ),
++          { id: "syncing", duration: 8000 }
++        );
++        throw new Error(
++          "data source read failed; refusing to sync to avoid overwriting the cloud library"
++        );
++      }
++    }
      let cloudSyncRecords = await ConfigUtil.getCloudConfig("sync");
 +    // A device can upload books.db before sync.json, or a user can place a
 +    // valid books.db in the data source manually. Recover those metadata rows
@@ -137,12 +222,7 @@ index 69070a88..218905af 100644
 +    // The merge would then treat every local record as cloud-less and upload
 +    // this device's whole library over the cloud one. Refuse loudly instead
 +    // of silently reverting books deleted or renamed elsewhere.
-+    const isBookRecord = (key: string) =>
-+      key.startsWith("database.sqlite.books.");
 +    const hasCloudBookRecords = Object.keys(cloudSyncRecords).some(
-+      isBookRecord
-+    );
-+    const hasLocalBookRecords = Object.keys(localSyncRecords).some(
 +      isBookRecord
 +    );
 +    if (
