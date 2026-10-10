@@ -106,7 +106,7 @@ index 0ea159ce..5567e760 100644
        this.setState({ isFinishOutput: true });
      }
 diff --git a/src/containers/header/component.tsx b/src/containers/header/component.tsx
-index 69070a88..031d5e72 100644
+index 69070a88..d4f0bf4e 100644
 --- a/src/containers/header/component.tsx
 +++ b/src/containers/header/component.tsx
 @@ -393,6 +393,13 @@ class Header extends React.Component<HeaderProps, HeaderState> {
@@ -123,7 +123,7 @@ index 69070a88..031d5e72 100644
      if (!ConfigService.getItem("defaultSyncOption")) {
        toast.error(
          this.props.t(
-@@ -462,7 +469,155 @@ class Header extends React.Component<HeaderProps, HeaderState> {
+@@ -462,7 +469,162 @@ class Header extends React.Component<HeaderProps, HeaderState> {
    };
    getCompareResult = async () => {
      let localSyncRecords = ConfigService.getAllSyncRecord();
@@ -240,6 +240,13 @@ index 69070a88..031d5e72 100644
 +        "cloud sync records are missing; refusing to overwrite the cloud library"
 +      );
 +    }
++    // Fix ghost rows before computing the merge: duplicate rows created by
++    // the append-style saveRecord (stale copy next to a renamed pull) and
++    // rows whose local record already says delete (kept forever because
++    // matching records make the merge a no-op that never queues deletes).
++    // Local-only; if the merge later re-pulls one of these keys, the row
++    // simply comes back from the cloud copy.
++    await BookUtil.reconcileLocalBookRows();
 +    // Newest writer wins for metadata rows: when the cloud record is NEWER
 +    // than the local one for the same key, drop the local record so the merge
 +    // treats the key as cloud-only and PULLS the cloud row (renames, author
@@ -418,7 +425,7 @@ index 874214ec..649ce01d 100644
        : "textOcrLang"
    );
 diff --git a/src/utils/file/bookUtil.ts b/src/utils/file/bookUtil.ts
-index cadacb4a..b3ddbd73 100644
+index cadacb4a..11f3e6c8 100644
 --- a/src/utils/file/bookUtil.ts
 +++ b/src/utils/file/bookUtil.ts
 @@ -13,6 +13,7 @@ import { getCloudConfig } from "./common";
@@ -573,7 +580,7 @@ index cadacb4a..b3ddbd73 100644
    static async deleteCloudBook(key: string, format: string) {
      let isAuthed = await TokenService.getToken("is_authed");
      if (isAuthed !== "yes") {
-@@ -615,6 +661,178 @@ class BookUtil {
+@@ -615,6 +661,229 @@ class BookUtil {
        return cloudBookList;
      }
    }
@@ -749,6 +756,57 @@ index cadacb4a..b3ddbd73 100644
 +    }
 +    return repaired;
 +  }
++  // The web build's saveRecord APPENDED rows instead of replacing by key, so
++  // pulling a renamed book left the old row next to the new one, and a row
++  // whose local record already says `delete` was never removed once the merge
++  // saw matching records on both sides (a no-op never queues deletes). Both
++  // leave ghost books in the UI after an otherwise perfect sync. Reconcile
++  // the local table at sync start: one row per key (prefer the row that has
++  // metadata over a bare timestamp row) and no row whose local sync record
++  // says delete - if the merge later decides that delete was wrong, the pull
++  // re-creates the row from the cloud copy.
++  static async reconcileLocalBookRows(): Promise<{
++    removedDuplicates: number;
++    removedDeleted: number;
++  }> {
++    const rows: Book[] = (await DatabaseService.getAllRecords("books")) || [];
++    const syncRecords = ConfigService.getAllSyncRecord();
++    const metadataScore = (row: Book) =>
++      (row?.md5 ? 2 : 0) + (/^\d+$/.test(String(row?.name || "")) ? 0 : 1);
++    const byKey = new Map<string, Book>();
++    let removedDuplicates = 0;
++    for (const row of rows) {
++      const key = String(row?.key);
++      const existing = byKey.get(key);
++      if (!existing) {
++        byKey.set(key, row);
++        continue;
++      }
++      removedDuplicates++;
++      if (metadataScore(row) >= metadataScore(existing)) {
++        byKey.set(key, row);
++      }
++    }
++    let removedDeleted = 0;
++    const kept: Book[] = [];
++    for (const [key, row] of byKey) {
++      const record = syncRecords[`database.sqlite.books.${key}`];
++      if (record?.operation === "delete") {
++        removedDeleted++;
++        continue;
++      }
++      kept.push(row);
++    }
++    if (removedDuplicates > 0 || removedDeleted > 0) {
++      // isRecord=false: the records already say the right thing - never
++      // stamp save@now over an existing delete record here.
++      await DatabaseService.saveAllRecords(kept, "books", false);
++      console.warn(
++        `reconciled local books table: removed ${removedDuplicates} duplicate row(s) and ${removedDeleted} row(s) whose sync record is delete`
++      );
++    }
++    return { removedDuplicates, removedDeleted };
++  }
    static async getBookNamesMapByKeys(bookKeys: string[]) {
      if (bookKeys.length === 0) {
        return {};
@@ -908,6 +966,31 @@ index 46f22d00..2612889c 100644
    return response;
  };
  export const updateUserConfig = async (config: any) => {
+diff --git a/src/utils/storage/databaseService.ts b/src/utils/storage/databaseService.ts
+index 399aae11..a28313ff 100644
+--- a/src/utils/storage/databaseService.ts
++++ b/src/utils/storage/databaseService.ts
+@@ -139,7 +139,19 @@ class DatabaseService {
+       });
+     } else {
+       let records = await this.getAllRecords(dbName);
+-      records.push(record);
++      // Replace by key instead of appending: the old push() left TWO rows for
++      // the same key whenever the sync pulled a row this device already had
++      // (e.g. a renamed book), so the stale copy stayed visible next to the
++      // new one. The Electron path goes through INSERT OR REPLACE in sqlite
++      // and never had this problem - match it.
++      const existingIndex = records.findIndex(
++        (row: any) => row?.key === record.key
++      );
++      if (existingIndex > -1) {
++        records[existingIndex] = record;
++      } else {
++        records.push(record);
++      }
+       await this.saveAllRecords(records, dbName);
+     }
+     if (isRecord) {
 diff --git a/src/utils/storage/syncService.ts b/src/utils/storage/syncService.ts
 index dbfcc8d5..bd1b6746 100644
 --- a/src/utils/storage/syncService.ts
