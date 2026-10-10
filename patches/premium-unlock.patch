@@ -106,7 +106,7 @@ index 0ea159ce..5567e760 100644
        this.setState({ isFinishOutput: true });
      }
 diff --git a/src/containers/header/component.tsx b/src/containers/header/component.tsx
-index 69070a88..42e51646 100644
+index 69070a88..d77c6cc6 100644
 --- a/src/containers/header/component.tsx
 +++ b/src/containers/header/component.tsx
 @@ -37,7 +37,6 @@ import {
@@ -158,7 +158,7 @@ index 69070a88..42e51646 100644
      if (!ConfigService.getItem("defaultSyncOption")) {
        toast.error(
          this.props.t(
-@@ -462,7 +486,162 @@ class Header extends React.Component<HeaderProps, HeaderState> {
+@@ -462,7 +486,164 @@ class Header extends React.Component<HeaderProps, HeaderState> {
    };
    getCompareResult = async () => {
      let localSyncRecords = ConfigService.getAllSyncRecord();
@@ -247,6 +247,15 @@ index 69070a88..42e51646 100644
 +      }
 +    }
      let cloudSyncRecords = await ConfigUtil.getCloudConfig("sync");
++    // Fix ghost rows BEFORE the folder repair runs. Repair re-indexes book
++    // files whose key is unknown locally, and "unknown" is computed from the
++    // current local rows: a delete-recorded ghost row still in the table
++    // counts as known, and a row repair re-creates gets a fresh save stamp
++    // that a later reconcile can no longer drop. That was the 2026-10-10
++    // 36/38 ping-pong on the desktop: the deleted binaries still sit in the
++    // MEGA rubbish bin where the picker lists them under `book/` (rclone
++    // does not), so every other sync resurrected them as number-named rows.
++    await BookUtil.reconcileLocalBookRows();
 +    // A device can upload books.db before sync.json, or a user can place a
 +    // valid books.db in the data source manually. Recover those metadata rows
 +    // instead of silently hiding them behind the missing sync records.
@@ -275,13 +284,6 @@ index 69070a88..42e51646 100644
 +        "cloud sync records are missing; refusing to overwrite the cloud library"
 +      );
 +    }
-+    // Fix ghost rows before computing the merge: duplicate rows created by
-+    // the append-style saveRecord (stale copy next to a renamed pull) and
-+    // rows whose local record already says delete (kept forever because
-+    // matching records make the merge a no-op that never queues deletes).
-+    // Local-only; if the merge later re-pulls one of these keys, the row
-+    // simply comes back from the cloud copy.
-+    await BookUtil.reconcileLocalBookRows();
 +    // Newest writer wins for metadata rows: when the cloud record is NEWER
 +    // than the local one for the same key, drop the local record so the merge
 +    // treats the key as cloud-only and PULLS the cloud row (renames, author
@@ -321,7 +323,7 @@ index 69070a88..42e51646 100644
      return await SyncHelper.compareAll(
        localSyncRecords,
        cloudSyncRecords,
-@@ -578,31 +757,12 @@ class Header extends React.Component<HeaderProps, HeaderState> {
+@@ -578,31 +759,12 @@ class Header extends React.Component<HeaderProps, HeaderState> {
            ) {
              return;
            }
@@ -498,7 +500,7 @@ index 874214ec..649ce01d 100644
        : "textOcrLang"
    );
 diff --git a/src/utils/file/bookUtil.ts b/src/utils/file/bookUtil.ts
-index cadacb4a..11f3e6c8 100644
+index cadacb4a..f15ca024 100644
 --- a/src/utils/file/bookUtil.ts
 +++ b/src/utils/file/bookUtil.ts
 @@ -13,6 +13,7 @@ import { getCloudConfig } from "./common";
@@ -653,7 +655,7 @@ index cadacb4a..11f3e6c8 100644
    static async deleteCloudBook(key: string, format: string) {
      let isAuthed = await TokenService.getToken("is_authed");
      if (isAuthed !== "yes") {
-@@ -615,6 +661,229 @@ class BookUtil {
+@@ -615,6 +661,247 @@ class BookUtil {
        return cloudBookList;
      }
    }
@@ -666,6 +668,14 @@ index cadacb4a..11f3e6c8 100644
 +    const localBooks: Book[] =
 +      (await DatabaseService.getAllRecords("books")) || [];
 +    const localKeys = new Set(localBooks.map((book) => String(book.key)));
++    const syncRecords = ConfigService.getAllSyncRecord();
++    // A key whose sync record says `delete` must never be re-indexed from a
++    // file listing: MEGA keeps deleted book files in the rubbish bin, the
++    // picker still lists them under `book/` (rclone does not), and
++    // re-indexing resurrected them as number-named ghost rows every other
++    // sync (the 2026-10-10 36/38 ping-pong).
++    const isDeletedKey = (key: string) =>
++      syncRecords[`database.sqlite.books.${key}`]?.operation === "delete";
 +    let repaired = 0;
 +    const supported = /\.(epub|pdf|txt|mobi|azw3|azw|htm|html|xml|xhtml|mhtml|docx|md|fb2|cbz|cbt|cbr|cb7)$/i;
 +
@@ -745,6 +755,12 @@ index cadacb4a..11f3e6c8 100644
 +        if (knownKeys.has(key) || localKeys.has(key)) {
 +          continue;
 +        }
++        if (isDeletedKey(key)) {
++          console.warn(
++            "MEGA folder recovery skipped delete-recorded key " + key
++          );
++          continue;
++        }
 +        let buffer: ArrayBuffer | null = null;
 +        if (!isTargetFolder) {
 +          buffer = await pickerSync.downloadFile(
@@ -806,6 +822,10 @@ index cadacb4a..11f3e6c8 100644
 +      // open manually uploaded files without renaming them first.
 +      const key = baseName;
 +      if (knownKeys.has(key) || localKeys.has(key)) {
++        continue;
++      }
++      if (isDeletedKey(key)) {
++        console.warn("cloud book recovery skipped delete-recorded key " + key);
 +        continue;
 +      }
 +      const book: Book = {
