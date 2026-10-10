@@ -106,10 +106,27 @@ index 0ea159ce..5567e760 100644
        this.setState({ isFinishOutput: true });
      }
 diff --git a/src/containers/header/component.tsx b/src/containers/header/component.tsx
-index 69070a88..d4f0bf4e 100644
+index 69070a88..42e51646 100644
 --- a/src/containers/header/component.tsx
 +++ b/src/containers/header/component.tsx
-@@ -393,6 +393,13 @@ class Header extends React.Component<HeaderProps, HeaderState> {
+@@ -37,7 +37,6 @@ import {
+   scanFolderForNewBooks,
+   showTaskProgress,
+   throttle,
+-  vexComfirmAsync,
+   AUTO_IMPORT_FOLDERS_KEY,
+ } from "../../utils/common";
+ import { driveList } from "../../constants/driveList";
+@@ -45,7 +44,7 @@ import SupportDialog from "../../components/dialogs/supportDialog";
+ import SyncService from "../../utils/storage/syncService";
+ import { LocalFileManager } from "../../utils/file/localFile";
+ import packageJson from "../../../package.json";
+-import { getTempToken, updateUserConfig } from "../../utils/request/user";
++import { getTempToken } from "../../utils/request/user";
+ import i18n from "../../i18n";
+ import { getNotification } from "../../utils/request/common";
+ import TokenService from "../../utils/storage/tokenService";
+@@ -393,6 +392,31 @@ class Header extends React.Component<HeaderProps, HeaderState> {
      }
    };
    beforeSync = async (userInfo: any) => {
@@ -120,10 +137,28 @@ index 69070a88..d4f0bf4e 100644
 +    // re-creates config files as duplicate nodes. See
 +    // SyncService.resetForFreshSync.
 +    SyncService.resetForFreshSync();
++    // This fork has no Koodo server account, so "Enable Koodo Sync" can
++    // never authenticate: every cloud read then falls back to this device's
++    // own stale `koodo_sync_data_*` localStorage snapshots, and the merge
++    // re-pulls rows the real data source has already deleted (2026-10-10:
++    // cloud clean at 36 rows while one device kept resurrecting
++    // 1772101991973 on every sync because its own snapshot still had the
++    // row and a save record). Fail loudly instead of syncing snapshots.
++    if (ConfigService.getReaderConfig("isEnableKoodoSync") === "yes") {
++      toast.error(
++        this.props.t(
++          "Enable Koodo Sync is turned on, but this build syncs through your data source only - while it is on, this device reads stale local snapshots and resurrects deleted books. Turn it off in Settings - Sync and backup, then sync again."
++        ),
++        { id: "syncing", duration: 10000 }
++      );
++      throw new Error(
++        "Enable Koodo Sync is on; refusing to sync from stale local snapshots"
++      );
++    }
      if (!ConfigService.getItem("defaultSyncOption")) {
        toast.error(
          this.props.t(
-@@ -462,7 +469,162 @@ class Header extends React.Component<HeaderProps, HeaderState> {
+@@ -462,7 +486,162 @@ class Header extends React.Component<HeaderProps, HeaderState> {
    };
    getCompareResult = async () => {
      let localSyncRecords = ConfigService.getAllSyncRecord();
@@ -286,6 +321,44 @@ index 69070a88..d4f0bf4e 100644
      return await SyncHelper.compareAll(
        localSyncRecords,
        cloudSyncRecords,
+@@ -578,31 +757,12 @@ class Header extends React.Component<HeaderProps, HeaderState> {
+           ) {
+             return;
+           }
+-          let result = await vexComfirmAsync(
+-            `<h3>${this.props.t("Enable Koodo Sync")}</h3><p>${
+-              this.props.t(
+-                "To enjoy a faster and seamless synchronization experience."
+-              ) +
+-              " " +
+-              this.props.t(
+-                "Your reading progress, notes, highlights, bookmarks, and other data will be stored and synced through our cloud service. Your books and covers will still be synced by your added data sources. All your data will be encrypted and stored securely in our cloud. You can disable this feature anytime in the settings."
+-              )
+-            }</p>`
+-          );
+-          if (result) {
+-            ConfigService.setReaderConfig("isEnableKoodoSync", "yes");
+-            let encryptedToken = await TokenService.getToken(
+-              this.props.defaultSyncOption + "_token"
+-            );
+-            await updateUserConfig({
+-              is_enable_koodo_sync: "yes",
+-              default_sync_option: this.props.defaultSyncOption,
+-              default_sync_token: encryptedToken || "",
+-            });
+-            let userInfo = await this.props.handleFetchUserInfo();
+-            toast.success(this.props.t("Setup successful"));
+-            this.handleCloudSync(userInfo);
+-          }
++          // This fork has no Koodo server account, so "Enable Koodo Sync"
++          // can never authenticate and only makes the device sync against
++          // its own stale `koodo_sync_data_*` localStorage snapshots (rows
++          // the cloud deleted come back - see the guard in beforeSync).
++          // Never offer it here; the guard still fails loudly if it was
++          // turned on on an older install.
+         }
+       }
+     }, 1000);
 diff --git a/src/containers/viewer/component.tsx b/src/containers/viewer/component.tsx
 index 1ecf70e7..06b94fad 100644
 --- a/src/containers/viewer/component.tsx
