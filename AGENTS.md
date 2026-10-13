@@ -76,6 +76,21 @@ fork of `koodo-reader/koodo-reader`. upstream = official repo, origin = `FahadBi
 - **rows named after a ms-timestamp** (`1772101994390` etc.) = broken imports with empty
   author/md5. recover the real title from the file itself (epub OPF `dc:title`/`dc:creator`, pdf
   `/Title`+`/Author`) instead of guessing — 2 of the 4 turned out to be duplicates that way.
+- **2026-10-13 "Meanwhile" dedupe (36 → 35 rows)**: the last empty-md5 row was half of a
+  duplicate pair — key `Meanwhile - Pick Any Path. 3,856 Story Possibilities` (basename-keyed
+  MEGA-folder-recovery row, no author/md5) vs key `1787903749906` (Jason Shiga, md5
+  `1a1566ba5e912d2b6252ee16dab252d5`), both pointing at byte-identical 7251084-byte PDFs (two
+  binaries on `book/`). kept the metadata row, dropped the recovery row + flipped its record
+  save→delete (fresh ms) + deleted the redundant binary — verified on BOTH config dirs by
+  re-download (35 rows, record=delete, 51 saves / 12 deletes). backup:
+  `C:\tmp\koodo-backup-meantime-20261013-232659`. the next device sync drops the local duplicate
+  (library shows Total 35). **same-size push trap recurred here**: an edited books.db that keeps
+  the exact byte size (20480, DELETE+VACUUM rounds to the same page count) is silently skipped by
+  plain `rclone copyto` ("Sizes identical") — the working force route for config files is
+  `rclone deletefile` the remote node THEN plain copyto + re-download assert (never `--update`,
+  which also no-ops while printing success). duplicate detection must match on md5 AND
+  normalized name+size: the two rows' titles differ by one punctuation char, so pure
+  string-equality missed the pair.
 - **description AND cover must NEVER be NULL (2026-08-28)**: NULL `description` crashes `pages/reader render()` → blank page; NULL `cover` makes `isCoverExist` return true (bug: `null !== ""`) → broken gray image instead of EmptyCover. always insert `description=''` AND `cover=''` (empty strings). if a book shows blank or a blank cover, check books.db first. fixed via `UPDATE books SET description='', cover='' WHERE key='<key>'` + re-upload both config folders.
 
 ## useful commands
