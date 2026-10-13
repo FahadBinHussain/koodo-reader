@@ -1060,14 +1060,15 @@ index 46f22d00..2612889c 100644
  };
  export const updateUserConfig = async (config: any) => {
 diff --git a/src/utils/storage/databaseService.ts b/src/utils/storage/databaseService.ts
-index 399aae11..a28313ff 100644
+index 399aae11..09dc6696 100644
 --- a/src/utils/storage/databaseService.ts
 +++ b/src/utils/storage/databaseService.ts
-@@ -139,7 +139,19 @@ class DatabaseService {
+@@ -139,8 +139,27 @@ class DatabaseService {
        });
      } else {
        let records = await this.getAllRecords(dbName);
 -      records.push(record);
+-      await this.saveAllRecords(records, dbName);
 +      // Replace by key instead of appending: the old push() left TWO rows for
 +      // the same key whenever the sync pulled a row this device already had
 +      // (e.g. a renamed book), so the stale copy stayed visible next to the
@@ -1081,9 +1082,40 @@ index 399aae11..a28313ff 100644
 +      } else {
 +        records.push(record);
 +      }
-       await this.saveAllRecords(records, dbName);
++      // isRecord=false: write the table WITHOUT re-stamping every row.
++      // saveAllRecords with isRecord=true marks EACH row save@Date.now(), so a
++      // single-row write re-stamped the whole library's records - a sync does
++      // many of them and then uploads the churned map, which is how a cloud
++      // delete@23:27 got overwritten by save@23:34 for a row it had removed
++      // (the 2026-10-13 "Meanwhile" duplicate race). This method stamps its
++      // own single record below.
++      await this.saveAllRecords(records, dbName, false);
      }
      if (isRecord) {
+       ConfigService.setSyncRecord(
+@@ -170,7 +189,10 @@ class DatabaseService {
+       if (records.length === 0) {
+         await this.deleteAllRecords(dbName);
+       } else {
+-        await this.saveAllRecords(records, dbName);
++        // isRecord=false: only the deleted key gets a record (stamped below);
++        // re-stamping the remaining rows here would churn every other book's
++        // record time on each delete (see saveRecord for the full story).
++        await this.saveAllRecords(records, dbName, false);
+       }
+     }
+     if (isRecord) {
+@@ -198,7 +220,9 @@ class DatabaseService {
+         }
+         return b;
+       });
+-      await this.saveAllRecords(records, dbName);
++      // isRecord=false: only the updated key gets a record (stamped below) -
++      // see saveRecord for why re-stamping every row here is dangerous.
++      await this.saveAllRecords(records, dbName, false);
+     }
+     if (isRecord) {
+       ConfigService.setSyncRecord(
 diff --git a/src/utils/storage/syncService.ts b/src/utils/storage/syncService.ts
 index dbfcc8d5..bd1b6746 100644
 --- a/src/utils/storage/syncService.ts
