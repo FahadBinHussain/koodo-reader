@@ -106,7 +106,7 @@ index 0ea159ce..5567e760 100644
        this.setState({ isFinishOutput: true });
      }
 diff --git a/src/containers/header/component.tsx b/src/containers/header/component.tsx
-index 69070a88..d77c6cc6 100644
+index 69070a88..119a9f4d 100644
 --- a/src/containers/header/component.tsx
 +++ b/src/containers/header/component.tsx
 @@ -37,7 +37,6 @@ import {
@@ -323,7 +323,7 @@ index 69070a88..d77c6cc6 100644
      return await SyncHelper.compareAll(
        localSyncRecords,
        cloudSyncRecords,
-@@ -578,31 +759,12 @@ class Header extends React.Component<HeaderProps, HeaderState> {
+@@ -578,37 +759,23 @@ class Header extends React.Component<HeaderProps, HeaderState> {
            ) {
              return;
            }
@@ -361,6 +361,41 @@ index 69070a88..d77c6cc6 100644
          }
        }
      }, 1000);
+   };
+   handleSync = async (compareResult) => {
+     try {
++      // Snapshot the book row set so the upload below can tell whether this
++      // sync dropped or added rows.
++      const bookKeysBefore = (await DatabaseService.getAllRecords("books"))
++        .map((book: any) => book.key)
++        .join("\n");
+       let tasks = await SyncHelper.startSync(
+         compareResult,
+         ConfigService,
+@@ -638,6 +805,23 @@ class Header extends React.Component<HeaderProps, HeaderState> {
+         );
+         return;
+       }
++      const bookKeysAfter = (await DatabaseService.getAllRecords("books"))
++        .map((book: any) => book.key)
++        .join("\n");
++      if (bookKeysBefore !== bookKeysAfter) {
++        // The sync engine only re-uploads `<db>.db` when the compare produced
++        // uploads for that db (kookit-extra: `e[a].upload.length > 0`). A book
++        // row REMOVED by adopting a cloud `delete` therefore produces no
++        // upload at all, and the dead row stayed in the cloud books.db forever
++        // behind its delete record - where the header's own reconcile can
++        // resurrect it on a fresh device ("drop stale local delete records that
++        // would hide a valid cloud row"). Push the db whenever the row set
++        // actually changed, drops included.
++        console.info(
++          "cloud books.db re-uploaded: local book rows changed during sync"
++        );
++        await ConfigUtil.uploadDatabase("books");
++      }
+       if (ConfigService.getReaderConfig("hideSyncProgress") !== "yes") {
+         toast.loading(this.props.t("Almost finished"), {
+           id: "syncing",
 diff --git a/src/containers/viewer/component.tsx b/src/containers/viewer/component.tsx
 index 1ecf70e7..06b94fad 100644
 --- a/src/containers/viewer/component.tsx
@@ -1060,7 +1095,7 @@ index 46f22d00..2612889c 100644
  };
  export const updateUserConfig = async (config: any) => {
 diff --git a/src/utils/storage/databaseService.ts b/src/utils/storage/databaseService.ts
-index 399aae11..09dc6696 100644
+index 399aae11..9ed9ba99 100644
 --- a/src/utils/storage/databaseService.ts
 +++ b/src/utils/storage/databaseService.ts
 @@ -139,8 +139,27 @@ class DatabaseService {
@@ -1116,6 +1151,38 @@ index 399aae11..09dc6696 100644
      }
      if (isRecord) {
        ConfigService.setSyncRecord(
+@@ -350,7 +374,12 @@ class DatabaseService {
+         }
+       }
+     } else {
+-      await this.saveAllRecords(records, dbName);
++      // isRecord=false: the loop after this branch already stamps each updated
++      // record as `update`. Letting saveAllRecords keep its default true would
++      // ALSO mark every row passed in as save@Date.now(), so one update of a
++      // few rows re-stamped them all as saves and churned the sync map (same
++      // bug class as saveRecord/deleteRecord/updateRecord - see gotcha 16).
++      await this.saveAllRecords(records, dbName, false);
+     }
+     for (let record of records) {
+       if (isRecord) {
+@@ -392,9 +421,15 @@ class DatabaseService {
+       let records = await this.getAllRecords(dbName);
+       records = records.filter((b) => b.bookKey !== bookKey);
+       if (records.length === 0) {
+-        await this.deleteAllRecords(dbName);
++        // every row belonged to this bookKey and is already delete-stamped above
++        await this.deleteAllRecords(dbName, false);
+       } else {
+-        await this.saveAllRecords(records, dbName);
++        // isRecord=false: this method already stamped `delete` for every record
++        // of bookKey above. saveAllRecords with its default true re-stamps EVERY
++        // REMAINING row save@Date.now(), so deleting one book's notes/bookmarks
++        // churned the whole table's records and could overwrite a cloud `delete`
++        // record with a fresh `save` - the same defect as saveRecord (gotcha 16).
++        await this.saveAllRecords(records, dbName, false);
+       }
+     }
+   }
 diff --git a/src/utils/storage/syncService.ts b/src/utils/storage/syncService.ts
 index dbfcc8d5..bd1b6746 100644
 --- a/src/utils/storage/syncService.ts
