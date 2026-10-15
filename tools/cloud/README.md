@@ -77,3 +77,12 @@ python tools/cloud/cloud-books-db.py --purge-key "<key>"
   fresh one.
 - **Re-verify ~60 s after pushing**, not at t=0.
 - **Never push while a sync is in flight** (rule 1 above).
+- **The force route has a kill window (hit 2026-10-16).** `deletefile` then
+  `copyto` is two commands and the push loop is sequential (`/KoodoReader/config`
+  first), so a run killed in between leaves THAT dir with no `sync.json` while
+  the other dir still holds its old copy. Nothing is lost — the app's
+  missing-record guard aborts loudly instead of pushing — but the app cannot
+  sync until it is back. Recovery = push the intact dir's file to the emptied
+  side (`copyto mega:/config/sync.json mega:/KoodoReader/config/sync.json`),
+  then re-assert both dirs byte-identical plus the record counts. After ANY
+  interrupted run, list both config dirs before touching the cloud again.
