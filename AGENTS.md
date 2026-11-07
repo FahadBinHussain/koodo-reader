@@ -129,6 +129,7 @@ settings live in two places, and deploys never touch either:
 
 - Vercel project `koodo-reader`; the deploy account email and its token live ONLY in the Bitwarden vault item `vercel.com - <deploy-account>` (token pattern `vcp_`). production alias = `koodoo.vercel.app` (bare preview URLs show Vercel login page — only the production alias serves publicly).
 - deploys automatically from `dev` on push; build runs the premium patch via `prebuild`/`build` scripts.
+- **Node is pinned to `22.x` in `package.json` engines (2026-11-07)** — do not loosen it back to `>=20`. Vercel's default runtime moved to Node 26, and `yarn install` then compiles `better-sqlite3` 11.6.0 from source and dies: `gyp ERR! stack Error: make failed with exit code: 2` / `Command "yarn install" exited with 1`, before the app build even starts. if a deploy fails at install with gyp errors, check the Node major first (details: `automata-private/knowledge/TRAP-VERCEL-NODE-MAJOR-NATIVE-BUILD.md`).
 - after sync/rebuild: hard-refresh or clear site data to avoid stale IndexedDB book state.
 
 ## cloud book recovery gotcha
