@@ -106,7 +106,7 @@ index 0ea159ce..5567e760 100644
        this.setState({ isFinishOutput: true });
      }
 diff --git a/src/containers/header/component.tsx b/src/containers/header/component.tsx
-index 69070a88..119a9f4d 100644
+index 69070a88..a615f445 100644
 --- a/src/containers/header/component.tsx
 +++ b/src/containers/header/component.tsx
 @@ -37,7 +37,6 @@ import {
@@ -158,7 +158,22 @@ index 69070a88..119a9f4d 100644
      if (!ConfigService.getItem("defaultSyncOption")) {
        toast.error(
          this.props.t(
-@@ -462,7 +486,164 @@ class Header extends React.Component<HeaderProps, HeaderState> {
+@@ -434,11 +458,9 @@ class Header extends React.Component<HeaderProps, HeaderState> {
+     await checkMissingBook();
+     let checkResult = await checkBrokenDatabase();
+     if (checkResult) {
+-      toast.error(
+-        this.props.t(
+-          "Broken data detected, please click the setting button to reset the sync records"
+-        )
+-      );
++      // checkBrokenDatabase already showed the exact reason. The old generic
++      // "click reset" toast here sent people in circles: reset only re-arms
++      // the same trap and the next interrupted sync brings it right back.
+       return false;
+     }
+     if (ConfigService.getReaderConfig("isEnableKoodoSync") !== "yes") {
+@@ -462,7 +484,164 @@ class Header extends React.Component<HeaderProps, HeaderState> {
    };
    getCompareResult = async () => {
      let localSyncRecords = ConfigService.getAllSyncRecord();
@@ -323,7 +338,7 @@ index 69070a88..119a9f4d 100644
      return await SyncHelper.compareAll(
        localSyncRecords,
        cloudSyncRecords,
-@@ -578,37 +759,23 @@ class Header extends React.Component<HeaderProps, HeaderState> {
+@@ -578,37 +757,23 @@ class Header extends React.Component<HeaderProps, HeaderState> {
            ) {
              return;
            }
@@ -372,7 +387,7 @@ index 69070a88..119a9f4d 100644
        let tasks = await SyncHelper.startSync(
          compareResult,
          ConfigService,
-@@ -638,6 +805,23 @@ class Header extends React.Component<HeaderProps, HeaderState> {
+@@ -638,6 +803,23 @@ class Header extends React.Component<HeaderProps, HeaderState> {
          );
          return;
        }
@@ -466,7 +481,7 @@ index f0529ea2..d525a8c9 100644
        console.error(error);
      }
 diff --git a/src/utils/common.ts b/src/utils/common.ts
-index 874214ec..649ce01d 100644
+index 874214ec..a95509a3 100644
 --- a/src/utils/common.ts
 +++ b/src/utils/common.ts
 @@ -734,7 +734,9 @@ export const preCacheAllBooks = async (bookList: Book[]) => {
@@ -480,7 +495,49 @@ index 874214ec..649ce01d 100644
          isKeepPDFBackground: "no",
        },
        Kookit
-@@ -1044,6 +1046,14 @@ export const testConnection = async (driveName: string, driveConfig: any) => {
+@@ -981,9 +983,40 @@ export const checkBrokenDatabase = async () => {
+       localSyncRecords[item].operation !== "delete"
+   );
+   let actualbooks = await DatabaseService.getAllRecordKeys("books");
+-  if (localBooks.length > 0 && actualbooks.length === 0) {
++  if (localBooks.length === 0 || actualbooks.length > 0) {
++    return false;
++  }
++  // The record map claims this device holds books, but its books table is
++  // empty. That is the state a sync leaves behind when it dies between
++  // compareAll (which commits the record map) and syncConfig (which writes
++  // the rows), and upstream then refuses every later sync until someone
++  // clicks "reset sync records" - so one interrupted sync blocks the device
++  // forever. Nothing local can be lost here, so repair in place: dropping
++  // the stale book records makes the next compare pull the whole library
++  // from the data source again.
++  if (ConfigService.getItem("isUseLocal") === "yes") {
++    // Different failure: rows are written to a folder, not IndexedDB, and a
++    // lost folder permission reads as an empty library on every attempt.
++    // Clearing records would only re-download into the same dead folder.
++    toast.error(
++      i18n.t(
++        "Broken data detected: local storage is enabled but no library can be read from the local folder. Re-select the folder in Settings - Sync and backup, or turn local storage off, then sync again."
++      ),
++      { duration: 8000 }
++    );
+     return true;
+   }
++  let repairedRecords = { ...localSyncRecords };
++  for (let item of localBooks) {
++    delete repairedRecords[item];
++  }
++  ConfigService.setAllSyncRecord(repairedRecords);
++  toast.success(
++    i18n.t(
++      "Repaired stale sync records: this device had book records but no local library, so the books will download again from your data source."
++    ),
++    { id: "sync-record-repair", duration: 6000 }
++  );
+   return false;
+ };
+ export const testConnection = async (driveName: string, driveConfig: any) => {
+@@ -1044,6 +1077,14 @@ export const testConnection = async (driveName: string, driveConfig: any) => {
  
      return result;
    } else {
@@ -495,7 +552,7 @@ index 874214ec..649ce01d 100644
      let syncUtil = new SyncUtil(driveName, driveConfig);
      // 上传到云端
      let result = await syncUtil.uploadFile(
-@@ -1396,7 +1406,9 @@ export const handleAutoCloudSync = async () => {
+@@ -1396,7 +1437,9 @@ export const handleAutoCloudSync = async () => {
        "defaultSyncOption",
        syncRes.data.default_sync_option
      );
@@ -506,7 +563,7 @@ index 874214ec..649ce01d 100644
      await TokenService.setToken(
        syncRes.data.default_sync_option + "_token",
        syncRes.data.default_sync_token
-@@ -1935,13 +1947,14 @@ export const TEXT_COLORS = [
+@@ -1935,13 +1978,14 @@ export const TEXT_COLORS = [
    "#2C2C2C",
  ];
  export const getDefaultOcrEngine = (currentBook: any) => {
@@ -523,7 +580,7 @@ index 874214ec..649ce01d 100644
      return "paddle";
    } else {
      return "system-ocr";
-@@ -1978,8 +1991,9 @@ export const getOcrLangList = (engine: string) => {
+@@ -1978,8 +2022,9 @@ export const getOcrLangList = (engine: string) => {
    return list;
  };
  export const getDefaultOcrLang = (engine: string, currentBook: any) => {
